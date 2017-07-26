@@ -32,6 +32,7 @@ class ImageUtils:
 
         self.utils = utils
         self.filepath = filepath
+        print filepath
         self.proxy = self.load_image(filepath)
         self.extension = split_ext(filepath)[1]
 
@@ -140,7 +141,7 @@ class ImageUtils:
             is_rem_y = False
 
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
-                              extension="nii"):
+                              extension="nii", benchmark=False):
         """
         Split the input image into several splits, all share with the same shape
         For now only support .nii extension
@@ -164,11 +165,12 @@ class ImageUtils:
         z_size = Z_size / Z_splits
         y_size = Y_size / Y_splits
 
-        # for benchmarking
-        total_read_time = 0
-        total_seek_time = 0
-        total_write_time = 0
-        total_seek_number = 0
+        if benchmark:
+            # for benchmarking
+            total_read_time = 0
+            total_seek_time = 0
+            total_write_time = 0
+            total_seek_number = 0
 
         # get all split_names and write them to the legend file
         split_names = generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix,
@@ -177,8 +179,8 @@ class ImageUtils:
         # generate all the headers for each split
         generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype())
         # get all write offset of all split names
-        print "Get split offsets..."
-        split_offsets = get_indexes_of_all_splits(legend_file, Y_size, Z_size)
+        print "Get split indexes..."
+        split_indexes = get_indexes_of_all_splits(legend_file, Y_size, Z_size)
         # drop the remainder which is less than one slice
         # if mem is less than one slice, then set mem to one slice
         mem = mem - mem % (Y_size * Z_size * bytes_per_voxel) \
@@ -192,19 +194,24 @@ class ImageUtils:
         # Core Loop:
         while True:
             next_read_offsets = (next_read_index[0] * bytes_per_voxel, next_read_index[1] * bytes_per_voxel + 1)
+            st = time()
             print("From {} to {}".format(next_read_offsets[0], next_read_offsets[1]))
             from_x_index = index_to_voxel(next_read_index[0], Y_size, Z_size)[2]
             to_x_index = index_to_voxel(next_read_index[1] + 1, Y_size, Z_size)[2]
 
+
             st_read_time = time()
             data_in_range = self.proxy.dataobj[..., from_x_index: to_x_index]
-            total_read_time += time() - st_read_time
-            total_seek_number += 1
+
+            if benchmark:
+                total_read_time += time() - st_read_time
+                total_seek_number += 1
 
             # iterate all splits to see if in the read range:
             for split_name in split_names:
-                in_range = check_in_range(next_read_offsets, split_offsets[split_name])
+                in_range = check_in_range(next_read_index, split_indexes[split_name])
                 if in_range:
+
                     split = Split(split_name)
                     # extract all the slices that in the read range
                     # X_index: index that in original image's coordinate system
@@ -225,9 +232,10 @@ class ImageUtils:
                             X_index_min - from_x_index: X_index_max - from_x_index + 1]
                             .flatten('F'), split_img, write_offset)
 
-                        total_write_time += write_time
-                        total_seek_time += seek_time
-                        total_seek_number += seek_number
+                        if benchmark:
+                            total_write_time += write_time
+                            total_seek_time += seek_time
+                            total_seek_number += seek_number
             # update next read range..
             next_read_index = (next_read_index[1] + 1, next_read_index[1] + voxels)
             #  last write, write no more than image size
@@ -239,13 +247,9 @@ class ImageUtils:
             # clear
             del data_in_range
 
-        # for benchmarking
-        print "************************************************"
-        print "Total time spent reading: ", total_read_time
-        print "Total time spent writing: ", total_write_time
-        print "Total time spent seeking: ", total_seek_time
-        print "Total number of seeks:", total_seek_number
-        print "************************************************"
+            print "takes ", time() - st
+
+        return total_read_time, total_write_time, total_seek_time, total_seek_number
 
     def reconstruct_img(self, legend, merge_func, mem=None, benchmark=False):
         """
@@ -264,15 +268,13 @@ class ImageUtils:
 
             m_type = Merge[merge_func]
 
-            total_extract_time, total_read_time, total_assign_time, total_to_bytes_time, \
-                   total_write_time, total_seek_time, total_seek_number = self.merge_types[m_type](
+            total_read_time, total_write_time, total_seek_time, total_seek_number = self.merge_types[m_type](
                 reconstructed, legend, mem, benchmark)
 
         if self.proxy is None:
             self.proxy = self.load_image(self.filepath)
 
-        return total_extract_time, total_read_time, total_assign_time, total_to_bytes_time, \
-               total_write_time, total_seek_time, total_seek_number
+        return total_read_time, total_write_time, total_seek_time, total_seek_number
 
     # TODO:make it work with HDFS
     def clustered_read(self, reconstructed, legend, mem):
@@ -363,9 +365,7 @@ class ImageUtils:
             total_seek_time = 0
             total_write_time = 0
             total_seek_number = 0
-            total_extract_time = 0
-            total_assign_time = 0
-            total_to_bytes_time = 0
+
 
         # get how many voxels per round
         voxels = mem / bytes_per_voxel
@@ -390,15 +390,11 @@ class ImageUtils:
                 if in_range:
 
                     found_first_split_in_range = True
-                    read_time_one_r, assign_time_one_r, to_bytes_time_one_r, extract_rows_time_one_r = \
-                        extract_rows(Split(split_name), data_dict, split_indexes[split_name], next_write_index, benchmark)
+                    read_time_one_r = extract_rows(Split(split_name), data_dict, split_indexes[split_name], next_write_index, benchmark)
 
                     if benchmark:
                         total_seek_number += 1
-                        total_extract_time += extract_rows_time_one_r
-                        total_assign_time += assign_time_one_r
                         total_read_time += read_time_one_r
-                        total_to_bytes_time += to_bytes_time_one_r
 
                 elif not found_first_split_in_range:
                     continue
@@ -428,8 +424,7 @@ class ImageUtils:
             del data_dict
 
         if benchmark:
-            return total_extract_time, total_read_time, total_assign_time, total_to_bytes_time, \
-               total_write_time, total_seek_time, total_seek_number
+            return total_read_time, total_write_time, total_seek_time, total_seek_number
         else:
             return None
 
@@ -613,15 +608,8 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
     """
     extract_all the rows that in the write range, and write the data to a numpy array
     """
-    start_time = time()
-
     read_time_one_r = 0
-    assign_time_one_r = 0
-    to_bytes_time_one_r = 0
-    extract_rows_time_one_r = 0
-
     write_start, write_end = write_index
-
     split_data = split.split_proxy.get_data()
 
     for n, index in enumerate(index_list):
@@ -638,15 +626,9 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
             data = split_data[..., j, i]
             st2 = time()
             data_bytes = data.tobytes('F')
-            st3 = time()
             data_dict[index_start] = data_bytes
-            st4 = time()
-
             if benchmark:
                 read_time_one_r += st2 - st
-                to_bytes_time_one_r += st3 - st2
-                assign_time_one_r += st4-st3
-
             del data
         # if split's one row's start index is in the write range, but end index is outside of write range.
         elif index_start <= write_end <= index_end:
@@ -654,15 +636,9 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
             data = split_data[: (write_end - index_start + 1), j, i]
             st2 = time()
             data_bytes = data.tobytes('F')
-            st3 = time()
             data_dict[index_start] = data_bytes
-            st4 = time()
-
             if benchmark:
                 read_time_one_r += st2 - st
-                to_bytes_time_one_r += st3 - st2
-                assign_time_one_r += st4 - st3
-
             del data
         # if split's one row's end index is in the write range, but start index is outside of write range.
         elif index_start <= write_start <= index_end:
@@ -670,23 +646,14 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
             data = split_data[write_start - index_start:, j, i]
             st2 = time()
             data_bytes = data.tobytes('F')
-            st3 = time()
             data_dict[write_start] = data_bytes
-            st4 = time()
-
             if benchmark:
                 read_time_one_r += st2 - st
-                to_bytes_time_one_r += st3 - st2
-                assign_time_one_r += st4 - st3
-
             del data
         # if not in the write range
         else:
             continue
-
-    extract_rows_time_one_r += time() - start_time
-
-    return read_time_one_r, assign_time_one_r, to_bytes_time_one_r, extract_rows_time_one_r
+    return read_time_one_r
 
 
 def get_indexes_of_all_splits(legend, Y_size, Z_size):
@@ -746,11 +713,15 @@ def write_array_to_file(data_array, to_file, write_offset):
     seek_number += 1
     seek_time += time() - seek_start
 
+    data = data_array.tobytes('F')
     write_start = time()
-    to_file.write(data_array.tobytes('F'))
+    to_file.write(data)
     to_file.flush()
     os.fsync(to_file)
     write_time += time() - write_start
+
+    del data_array
+    del data
 
     return seek_time, write_time, seek_number
 
