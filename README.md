@@ -1,13 +1,8 @@
 # -bin-sam
 A library to split and merge high-resolution 3D images
+Currently supports [nii](https://nifti.nimh.nih.gov) format only.
 
-# getting started
-imageutils.py is a python library which can split and merge high-resolution 3D images using differnet strategy.
-
-
-Currently support [nii](https://nifti.nimh.nih.gov) format.
-
-## prerequisites
+# prerequisites
 - Python 2.7.5
 - Numpy 1.12.1
 - Nibabel
