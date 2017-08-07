@@ -1,5 +1,5 @@
 # -bin-sam
-A library to split and merge high-resolution 3D images
+A library to split and merge high-resolution 3D images.
 Currently supports [nii](https://nifti.nimh.nih.gov) format only.
 
 # prerequisites
@@ -62,4 +62,7 @@ img.reconstruct_img(legend="/path/to/legend", "multiple", mem=12*1024**3)
 
 
 # License
+
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+

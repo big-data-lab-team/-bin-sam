@@ -641,6 +641,7 @@ class ImageUtils:
             del data_dict
 
         if benchmark:
+            print total_read_time, total_write_time, total_seek_time, total_seek_number
             return total_read_time, total_write_time, total_seek_time, total_seek_number
         else:
             return None
@@ -911,33 +912,29 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
 
         if index_start >= write_start and index_end <= write_end:
             st = time()
-            data = split_data[..., j, i]
+            data_bytes = split_data[..., j, i].tobytes('F')
             st2 = time()
-            data_bytes = data.tobytes('F')
             data_dict[index_start] = data_bytes
             if benchmark:
                 read_time_one_r += st2 - st
-            del data
+
         # if split's one row's start index is in the write range, but end index is outside of write range.
         elif index_start <= write_end <= index_end:
             st = time()
-            data = split_data[: (write_end - index_start + 1), j, i]
+            data_bytes = split_data[: (write_end - index_start + 1), j, i].tobytes('F')
             st2 = time()
-            data_bytes = data.tobytes('F')
             data_dict[index_start] = data_bytes
             if benchmark:
                 read_time_one_r += st2 - st
-            del data
         # if split's one row's end index is in the write range, but start index is outside of write range.
         elif index_start <= write_start <= index_end:
             st = time()
-            data = split_data[write_start - index_start:, j, i]
+            data_bytes = split_data[write_start - index_start:, j, i].tobytes('F')
             st2 = time()
-            data_bytes = data.tobytes('F')
             data_dict[write_start] = data_bytes
             if benchmark:
                 read_time_one_r += st2 - st
-            del data
+
         # if not in the write range
         else:
             continue
