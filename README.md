@@ -62,8 +62,7 @@ img.reconstruct_img(legend="/path/to/legend", "multiple", mem=12*1024**3)
 
 
 # License
-<<<<<<< HEAD
+
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
-=======
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
->>>>>>> 0c3b4339461298d32132f029b63359e748994542
+
