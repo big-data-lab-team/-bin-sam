@@ -9,7 +9,7 @@ from time import time
 import os
 import logging
 from enum import Enum
-
+import gzip
 class Merge(Enum):
     clustered = 0
     multiple = 1
@@ -318,7 +318,7 @@ class ImageUtils:
 
         return total_read_time, total_write_time, total_seek_time, total_seek_number
 
-    def reconstruct_img(self, legend, merge_func, mem=None, benchmark=False):
+    def reconstruct_img(self, legend, merge_func, mem=None, input_compressed=False, benchmark=False):
         """
 
         Keyword arguments:
@@ -327,19 +327,24 @@ class ImageUtils:
                           reading blocks and writing slices (i.e. cluster reads), and 2 or slice_slice for reading slices and writing slices
         mem             : the amount of available memory in bytes
         """
-
-        with open(self.filepath, self.file_access()) as reconstructed:
-
-            if self.proxy is None:
-                self.header.write_to(reconstructed)
-
-            m_type = Merge[merge_func]
-
-            total_read_time, total_write_time, total_seek_time, total_seek_number = self.merge_types[m_type](
-                reconstructed, legend, mem, benchmark)
+        if not self.filepath.endswith('.gz'):
+            print "The reconstucted image is going to be uncompressed..."
+            reconstructed = open(self.filepath, self.file_access())
+        else:
+            print "The reconstucted image is going to be compressed..."
+            reconstructed = gzip.open(self.filepath, self.file_access())
 
         if self.proxy is None:
-            self.proxy = self.load_image(self.filepath)
+            self.header.write_to(reconstructed)
+
+        m_type = Merge[merge_func]
+        if input_compressed:
+            print "The input splits are compressed.."
+
+        total_read_time, total_write_time, total_seek_time, total_seek_number = self.merge_types[m_type](
+                reconstructed, legend, mem, input_compressed, benchmark)
+
+        reconstructed.close()
 
         return total_read_time, total_write_time, total_seek_time, total_seek_number
 
@@ -415,7 +420,7 @@ class ImageUtils:
         print "Total number of seeks: ", total_num_seeks
         print "Total time spent writing: ", total_write
 
-        return 0, total_read, total_assign, total_tobyte, total_write, total_seek, total_num_seeks
+        return total_read, total_write, total_seek, total_num_seeks
 
 
     def insert_elems(self, data_dict, splits, start_index, end_index, bytes_per_voxel, y_size, z_size, x_size):
@@ -564,7 +569,7 @@ class ImageUtils:
         return end_idx
 
                 
-    def multiple_reads(self, reconstructed, legend, mem, benchmark):
+    def multiple_reads(self, reconstructed, legend, mem, input_compressed, benchmark):
         """ Reconstruct an image given a set of splits and amount of available memory.
         multiple_reads: load splits servel times to read a complete slice
         Currently it can work on random shape of splits and in unsorted order
@@ -607,7 +612,7 @@ class ImageUtils:
                 if in_range:
 
                     found_first_split_in_range = True
-                    read_time_one_r = extract_rows(Split(split_name), data_dict, split_indexes[split_name], next_write_index, benchmark)
+                    read_time_one_r = extract_rows(Split(split_name), data_dict, split_indexes[split_name], next_write_index, input_compressed, benchmark)
 
                     if benchmark:
                         total_seek_number += 1
@@ -893,13 +898,17 @@ def regenerate_split_name_from_position(split_name, position):
     return split_name
 
 
-def extract_rows(split, data_dict, index_list, write_index, benchmark):
+def extract_rows(split, data_dict, index_list, write_index, input_compressed, benchmark):
     """
     extract_all the rows that in the write range, and write the data to a numpy array
     """
     read_time_one_r = 0
     write_start, write_end = write_index
+
+    ts1 = time()
     split_data = split.split_proxy.get_data()
+    if benchmark and input_compressed:
+        read_time_one_r += time() - ts1
 
     for n, index in enumerate(index_list):
 
@@ -915,7 +924,7 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
             data_bytes = split_data[..., j, i].tobytes('F')
             st2 = time()
             data_dict[index_start] = data_bytes
-            if benchmark:
+            if benchmark and not input_compressed:
                 read_time_one_r += st2 - st
 
         # if split's one row's start index is in the write range, but end index is outside of write range.
@@ -924,7 +933,7 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
             data_bytes = split_data[: (write_end - index_start + 1), j, i].tobytes('F')
             st2 = time()
             data_dict[index_start] = data_bytes
-            if benchmark:
+            if benchmark and not input_compressed:
                 read_time_one_r += st2 - st
         # if split's one row's end index is in the write range, but start index is outside of write range.
         elif index_start <= write_start <= index_end:
@@ -932,12 +941,13 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
             data_bytes = split_data[write_start - index_start:, j, i].tobytes('F')
             st2 = time()
             data_dict[write_start] = data_bytes
-            if benchmark:
+            if benchmark and not input_compressed:
                 read_time_one_r += st2 - st
 
         # if not in the write range
         else:
             continue
+    del split_data
     return read_time_one_r
 
 
