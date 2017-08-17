@@ -9,10 +9,13 @@ from time import time
 import os
 import logging
 from enum import Enum
+import gzip
+
 
 class Merge(Enum):
     clustered = 0
     multiple = 1
+
 
 class ImageUtils:
     """ Helper utility class for performing operations on images"""
@@ -33,7 +36,6 @@ class ImageUtils:
         print filepath
         self.proxy = self.load_image(filepath)
         self.extension = split_ext(filepath)[1]
-        
 
         self.header = None
 
@@ -144,9 +146,9 @@ class ImageUtils:
 
             is_rem_y = False
 
-    #TODO: Test the implementation to make sure it works
+    # TODO: Test the implementation to make sure it works
     def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
-                                extension="nii"):
+                               extension="nii"):
         """
         Split the input image into several splits, all share with the same shape
         For now only supports Nifti1 images
@@ -196,17 +198,18 @@ class ImageUtils:
         for i in range(start_index, len(split_names), num_splits):
             start_pos = pos_to_int_tuple(split_ext(split_names[i])[0].split('_'))
             end_pos = pos_to_int_tuple(split_ext(split_names[num_splits - 1])[0].split('_'))
-            data = self.proxy.dataobj[start_pos[0]:end_pos[0] + y_size, start_pos[1]:end_pos[1] + z_size, start_pos[2]:end_pos[2] + x_size]
-    
+            data = self.proxy.dataobj[start_pos[0]:end_pos[0] + y_size, start_pos[1]:end_pos[1] + z_size,
+                   start_pos[2]:end_pos[2] + x_size]
+
             for j in xrange(num_splits):
                 y_s = start_pos[0] + j * y_size
                 z_s = start_pos[1] + j * z_size
                 x_s = start_pos[2] + j * x_size
 
-                split_data = data[y_s : y_s + y_size, z_s : z_s + z_size, x_s : x_s + x_size]
+                split_data = data[y_s: y_s + y_size, z_s: z_s + z_size, x_s: x_s + x_size]
                 im = nib.Nifti1Image(split_data, self.affine)
                 nib.save(im, split_names[i + j])
-                    
+
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
                               extension="nii", benchmark=False):
         """
@@ -266,7 +269,6 @@ class ImageUtils:
             from_x_index = index_to_voxel(next_read_index[0], Y_size, Z_size)[2]
             to_x_index = index_to_voxel(next_read_index[1] + 1, Y_size, Z_size)[2]
 
-
             st_read_time = time()
             data_in_range = self.proxy.dataobj[..., from_x_index: to_x_index]
 
@@ -297,7 +299,7 @@ class ImageUtils:
                         seek_time, write_time, seek_number = write_array_to_file(
                             data_in_range[y_index_min: y_index_max, z_index_min: z_index_max,
                             X_index_min - from_x_index: X_index_max - from_x_index + 1]
-                            .flatten('F'), split_img, write_offset)
+                                .flatten('F'), split_img, write_offset)
 
                         if benchmark:
                             total_write_time += write_time
@@ -318,7 +320,7 @@ class ImageUtils:
 
         return total_read_time, total_write_time, total_seek_time, total_seek_number
 
-    def reconstruct_img(self, legend, merge_func, mem=None, benchmark=False):
+    def reconstruct_img(self, legend, merge_func, mem=None, input_compressed=False, benchmark=False):
         """
 
         Keyword arguments:
@@ -327,29 +329,34 @@ class ImageUtils:
                           reading blocks and writing slices (i.e. cluster reads), and 2 or slice_slice for reading slices and writing slices
         mem             : the amount of available memory in bytes
         """
-
-        with open(self.filepath, self.file_access()) as reconstructed:
-
-            if self.proxy is None:
-                self.header.write_to(reconstructed)
-
-            m_type = Merge[merge_func]
-
-            total_read_time, total_write_time, total_seek_time, total_seek_number = self.merge_types[m_type](
-                reconstructed, legend, mem, benchmark)
+        if not self.filepath.endswith('.gz'):
+            print "The reconstucted image is going to be uncompressed..."
+            reconstructed = open(self.filepath, self.file_access())
+        else:
+            print "The reconstucted image is going to be compressed..."
+            reconstructed = gzip.open(self.filepath, self.file_access())
 
         if self.proxy is None:
-            self.proxy = self.load_image(self.filepath)
+            self.header.write_to(reconstructed)
+
+        m_type = Merge[merge_func]
+        if input_compressed:
+            print "The input splits are compressed.."
+
+        total_read_time, total_write_time, total_seek_time, total_seek_number = self.merge_types[m_type](
+            reconstructed, legend, mem, input_compressed, benchmark)
+
+        reconstructed.close()
 
         return total_read_time, total_write_time, total_seek_time, total_seek_number
 
     # TODO:make it work with HDFS
-    def clustered_read(self, reconstructed, legend, mem, benchmark):
+    def clustered_read(self, reconstructed, legend, mem, input_compressed, benchmark):
         """ Reconstruct an image given a set of splits and amount of available memory such that it can load subset of splits into memory for faster processing.
-            Assumes all blocks are of the same dimensions. 
+            Assumes all blocks are of the same dimensions.
         Keyword arguments:
         reconstructed          : the fileobject pointing to the to-be reconstructed image
-        legend                 : legend containing the URIs of the splits. Splits should be ordered in the way they should be written (i.e. along first dimension, 
+        legend                 : legend containing the URIs of the splits. Splits should be ordered in the way they should be written (i.e. along first dimension,
                                  then second, then third) for best performance
         mem                    : Amount of available memory in bytes. If mem is None, it will only read one split at a time
         NOTE: currently only supports nifti blocks as it uses 'bitpix' to determine number of bytes per voxel. Element is specific to nifti headers
@@ -375,27 +382,30 @@ class ImageUtils:
         # if a mem is inputted as 0, proceed with naive implementation (same as not inputting a value for mem)
         mem = None if mem == 0 else mem
 
-        #eof = splits[-1].strip()
+        # eof = splits[-1].strip()
         remaining_mem = mem
         data_dict = {}
 
         unread_split = None
-        
+
         start_index = 0
         end_index = 0
 
         while start_index < len(splits):
 
-            
             if mem is not None:
-                end_index =  self.get_end_index(data_dict, remaining_mem, splits, start_index, bytes_per_voxel, y_size, z_size, x_size)
+                end_index = self.get_end_index(data_dict, remaining_mem, splits, start_index, bytes_per_voxel, y_size,
+                                               z_size, x_size)
             else:
                 end_index = start_index
                 print "Naive reading from split index {0} -> {1}".format(start_index, end_index)
 
-            read_time, assign_time = self.insert_elems(data_dict, splits, start_index, end_index, bytes_per_voxel, y_size, z_size, x_size)
 
-            seek_time, write_time, num_seeks = write_dict_to_file(data_dict, reconstructed, bytes_per_voxel, self.header_size)
+            read_time, assign_time = self.insert_elems(data_dict, splits, start_index, end_index, bytes_per_voxel,
+                                                       y_size, z_size, x_size,input_compressed)
+
+            seek_time, write_time, num_seeks = write_dict_to_file(data_dict, reconstructed, bytes_per_voxel,
+                                                                  self.header_size)
 
             total_read += read_time
             total_assign += assign_time
@@ -408,20 +418,19 @@ class ImageUtils:
             if start_index <= end_index:
                 start_index = end_index + 1
             else:
-                break        
-    
+                break
+
         print "Total time spent reading: ", total_read
         print "Total time spent seeking: ", total_seek
         print "Total number of seeks: ", total_num_seeks
         print "Total time spent writing: ", total_write
 
-        return 0, total_read, total_assign, total_tobyte, total_write, total_seek, total_num_seeks
+        return total_read, total_write, total_seek, total_num_seeks
 
-
-    def insert_elems(self, data_dict, splits, start_index, end_index, bytes_per_voxel, y_size, z_size, x_size):
+    def insert_elems(self, data_dict, splits, start_index, end_index, bytes_per_voxel, y_size, z_size, x_size, input_compressed):
         """
         Insert elements into pre-initialized dictionary. If naive implementation of clustered reads, create dictionary with elements.
-        
+
         Keyword arguments:
 
         data_dict       - pre-initialized or empty (if naive) dictionary to store key-value pairs representing seek position and value to be written, respectively
@@ -434,16 +443,16 @@ class ImageUtils:
         x_size          - third dimensions's array size in reconstructed image
 
         """
-    
+
         write_type = None
         start_split = Split(splits[start_index].strip())
         start_pos = pos_to_int_tuple(start_split.split_pos)
 
         end_split = Split(splits[end_index].strip())
-        split_pos = pos_to_int_tuple(end_split.split_pos) 
+        split_pos = pos_to_int_tuple(end_split.split_pos)
         end_pos = (split_pos[0] + end_split.split_y, split_pos[1] + end_split.split_z, split_pos[2] + end_split.split_x)
-        
-        read_time = 0 
+
+        read_time = 0
         assign_time = 0
 
         for i in range(start_index, end_index + 1):
@@ -452,49 +461,52 @@ class ImageUtils:
             split_pos = pos_to_int_tuple(split_im.split_pos)
             idx_start = 0
 
+
+            st = time()
             split_data = split_im.split_proxy.get_data()
+            if input_compressed:
+                read_time += time() - st
 
             # split is a complete slice
-            if split_im.split_y  == y_size and split_im.split_z == z_size:
+            if split_im.split_y == y_size and split_im.split_z == z_size:
                 t = time()
                 data = split_data.tobytes('F')
-                read_time += time() - t  
-          
+                if not input_compressed:
+                    read_time += time() - t
+
                 key = split_pos[0] + split_pos[1] * y_size + split_pos[2] * y_size * z_size
 
-              
                 t = time()
                 data_dict[key] = data
-                assign_time += time() - t                
+                assign_time += time() - t
 
 
-            # split is a complete row
+                # split is a complete row
             # WARNING: Untested
             elif split_im.split_y == y_size and split_im.split_z < z_size:
                 for i in xrange(split_im.split_x):
-                
                     t = time()
-                    data = split_data[:,:,i].tobytes('F')
-                    read_time += time() - t
+                    data = split_data[:, :, i].tobytes('F')
+                    if not input_compressed:
+                        read_time += time() - t
 
                     key = split_pos[0] + (split_pos[1] * y_size) + (split_pos[2] + i) * y_size * z_size
-
 
                     t = time()
                     data_dict[key] = data
                     assign_time += time() - t
-                
+
             # split is an incomplete row
             else:
                 for i in xrange(split_im.split_x):
                     for j in xrange(split_im.split_z):
-                
                         t = time()
                         data = split_data[:, j, i].tobytes('F')
-                        read_time += time() - t
-                        
+                        if not input_compressed:
+                            read_time += time() - t
+
                         key = split_pos[0] + (split_pos[1] + j) * y_size + (split_pos[2] + i) * y_size * z_size
-                        key_count +=1
+                        # key_count += 1
                         t = time()
                         data_dict[key] = data
                         assign_time += time() - t
@@ -521,10 +533,10 @@ class ImageUtils:
         """
 
         split_name = splits[start_idx].strip()
-        
+
         split_im = start_im = Split(split_name)
         split_pos = start_pos = pos_to_int_tuple(start_im.split_pos)
-       
+
         remaining_mem -= start_im.split_bytes
 
         if remaining_mem < 0:
@@ -549,8 +561,8 @@ class ImageUtils:
 
             end_idx = i
             if remaining_mem <= 0:
-                break 
-                  
+                break
+
         if remaining_mem < 0:
             end_idx -= 1
             split_name = splits[end_idx].strip()
@@ -559,12 +571,12 @@ class ImageUtils:
 
         end_pos = (split_pos[0] + split_im.split_y, split_pos[1] + split_im.split_z, split_pos[2] + split_im.split_x)
 
-        end_idx, end_pos = adjust_end_read(splits, start_pos, split_pos, end_pos, start_idx, end_idx, split_positions, y_size, z_size)
+        end_idx, end_pos = adjust_end_read(splits, start_pos, split_pos, end_pos, start_idx, end_idx, split_positions,
+                                           y_size, z_size)
         print "Reading from position {0} (index {1}) -> {2} (index {3})".format(start_pos, start_idx, end_pos, end_idx)
         return end_idx
 
-                
-    def multiple_reads(self, reconstructed, legend, mem, benchmark):
+    def multiple_reads(self, reconstructed, legend, mem, input_compressed, benchmark):
         """ Reconstruct an image given a set of splits and amount of available memory.
         multiple_reads: load splits servel times to read a complete slice
         Currently it can work on random shape of splits and in unsorted order
@@ -582,7 +594,6 @@ class ImageUtils:
             total_seek_time = 0
             total_write_time = 0
             total_seek_number = 0
-
 
         # get how many voxels per round
         voxels = mem / bytes_per_voxel
@@ -607,7 +618,8 @@ class ImageUtils:
                 if in_range:
 
                     found_first_split_in_range = True
-                    read_time_one_r = extract_rows(Split(split_name), data_dict, split_indexes[split_name], next_write_index, benchmark)
+                    read_time_one_r = extract_rows(Split(split_name), data_dict, split_indexes[split_name],
+                                                   next_write_index, input_compressed, benchmark)
 
                     if benchmark:
                         total_seek_number += 1
@@ -619,9 +631,9 @@ class ImageUtils:
                     # because splits are sorted
                     break
 
-
-            #time to write to file
-            seek_time, write_time, seek_number = write_dict_to_file(data_dict, reconstructed, bytes_per_voxel, header_offset)
+            # time to write to file
+            seek_time, write_time, seek_number = write_dict_to_file(data_dict, reconstructed, bytes_per_voxel,
+                                                                    header_offset)
 
             if benchmark:
                 total_seek_number += seek_number
@@ -699,10 +711,11 @@ class ImageUtils:
             return "w+b"
         return "r+b"
 
+
 def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx, split_positions, y_size, z_size):
     """
     Adjusts the end split should the read not be a complete slice, complete row, or incomplete row
-    
+
     Keyword arguments
     splits          - list of split filenames
     start_pos       - the starting position of the first split in the reconstructed array
@@ -715,12 +728,12 @@ def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx,
     z_size          - the second dimension of the reconstructed image's array size
 
     Returns: the "correct" last split, its index in splits, and its end position
-    """  
- 
+    """
+
     prev_end_idx = end_idx
 
     # adjust end split it incomplete row spanning different slices/rows
-    if start_pos[0] > 0  and (start_pos[2] < split_pos[2] or start_pos[1] < split_pos[1]):
+    if start_pos[0] > 0 and (start_pos[2] < split_pos[2] or start_pos[1] < split_pos[1]):
         # get first row's last split
         curr_end_y = start_pos[1]
 
@@ -729,15 +742,15 @@ def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx,
                 end_idx = start_index + x - 1
                 break
 
-    # adjust end split if splits are on different slices and slices or complete rowa are to be written. 
+    # adjust end split if splits are on different slices and slices or complete rowa are to be written.
     elif start_pos[2] < split_pos[2]:
 
         # complete slices
         if start_pos[0] == 0 and start_pos[1] == 0 and (end_pos[0] < y_size or end_pos[1] < z_size):
             # need to find last split read before slice change
-            
+
             curr_end_x = split_pos[2]
-            for x in range(-2, -len(split_positions) -1, -1):
+            for x in range(-2, -len(split_positions) - 1, -1):
                 if split_positions[x][2] < curr_end_x:
                     end_idx = start_index + len(split_positions) + x
                     break
@@ -747,29 +760,29 @@ def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx,
 
             # get first slice's last split
             curr_end_x = start_pos[2]
-    
+
             for x in range(1, len(split_positions)):
                 if split_positions[x][2] > curr_end_x:
                     end_idx = start_index + x - 1
                     break
- 
-    # adjust end split if splits start on the same slice but on different rows, and read splits contain and incomplete row and a complete row
-    elif start_pos[2] == split_pos[2] and start_pos[1] < split_pos[1] and end_pos[0] != y_size:                    
 
-        # get last split of second-to-last row 
+    # adjust end split if splits start on the same slice but on different rows, and read splits contain and incomplete row and a complete row
+    elif start_pos[2] == split_pos[2] and start_pos[1] < split_pos[1] and end_pos[0] != y_size:
+
+        # get last split of second-to-last row
         curr_end_y = split_pos[1]
-        for x in range(-2, -len(split_positions) -1, -1):
+        for x in range(-2, -len(split_positions) - 1, -1):
             if split_positions[x][1] < curr_end_y:
                 end_idx = start_index + len(split_positions) + x
                 break
-    #load new end
+    # load new end
     if prev_end_idx != end_idx:
         split_im = Split(splits[end_idx].strip())
         split_pos = pos_to_int_tuple(split_im.split_pos)
         end_pos = (split_pos[0] + split_im.split_y, split_pos[1] + split_im.split_z, split_pos[2] + split_im.split_x)
 
     return end_idx, end_pos
-    
+
 
 def generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix, extension):
     """
@@ -893,13 +906,17 @@ def regenerate_split_name_from_position(split_name, position):
     return split_name
 
 
-def extract_rows(split, data_dict, index_list, write_index, benchmark):
+def extract_rows(split, data_dict, index_list, write_index, input_compressed, benchmark):
     """
     extract_all the rows that in the write range, and write the data to a numpy array
     """
     read_time_one_r = 0
     write_start, write_end = write_index
+
+    ts1 = time()
     split_data = split.split_proxy.get_data()
+    if benchmark and input_compressed:
+        read_time_one_r += time() - ts1
 
     for n, index in enumerate(index_list):
 
@@ -909,13 +926,12 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
         j = n % (split.split_z)
         i = n / (split.split_z)
 
-
         if index_start >= write_start and index_end <= write_end:
             st = time()
             data_bytes = split_data[..., j, i].tobytes('F')
             st2 = time()
             data_dict[index_start] = data_bytes
-            if benchmark:
+            if benchmark and not input_compressed:
                 read_time_one_r += st2 - st
 
         # if split's one row's start index is in the write range, but end index is outside of write range.
@@ -924,7 +940,7 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
             data_bytes = split_data[: (write_end - index_start + 1), j, i].tobytes('F')
             st2 = time()
             data_dict[index_start] = data_bytes
-            if benchmark:
+            if benchmark and not input_compressed:
                 read_time_one_r += st2 - st
         # if split's one row's end index is in the write range, but start index is outside of write range.
         elif index_start <= write_start <= index_end:
@@ -932,12 +948,13 @@ def extract_rows(split, data_dict, index_list, write_index, benchmark):
             data_bytes = split_data[write_start - index_start:, j, i].tobytes('F')
             st2 = time()
             data_dict[write_start] = data_bytes
-            if benchmark:
+            if benchmark and not input_compressed:
                 read_time_one_r += st2 - st
 
         # if not in the write range
         else:
             continue
+    del split_data
     return read_time_one_r
 
 
@@ -982,10 +999,11 @@ def check_in_range(next_index, index_list):
             return True
     return False
 
+
 def write_array_to_file(data_array, to_file, write_offset):
     """
     :param data_array: consists of consistent data that to bo written to the file
-    :param reconstructed: reconstructed image file to be written 
+    :param reconstructed: reconstructed image file to be written
     :param write_offset: file offset to be written
     :return: benchmarking params
     """
@@ -1010,6 +1028,7 @@ def write_array_to_file(data_array, to_file, write_offset):
 
     return seek_time, write_time, seek_number
 
+
 def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
     """
     :param data_array: consists of consistent data that to bo written to the file
@@ -1024,18 +1043,17 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
     no_seek = 0
     prev_tell = 0
 
-
     for k in sorted(data_dict.keys()):
 
         seek_pos = header_offset + k * bytes_per_voxel
 
         if to_file.tell() != seek_pos:
-            #print "seek point:", seek_pos, to_file.tell()
+            # print "seek point:", seek_pos, to_file.tell()
             seek_start = time()
             to_file.seek(seek_pos, 0)
             seek_number += 1
             seek_time += time() - seek_start
-        
+
         prev_tell = to_file.tell()
 
         data_bytes = data_dict[k]
@@ -1043,15 +1061,16 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
         write_start = time()
         to_file.write(data_bytes)
         write_time += time() - write_start
-
         del data_dict[k]
         del data_bytes
+
     st = time()
     to_file.flush()
     os.fsync(to_file)
     write_time += time() - st
 
     return seek_time, write_time, seek_number
+
 
 def generate_header(first_dim, second_dim, third_dim, dtype):
     # TODO: Fix header so that header information is accurate once data is filled
@@ -1122,8 +1141,10 @@ def split_ext(filepath):
 
     return root, ext_1
 
+
 def pos_to_int_tuple(pos):
     return (int(pos[-3]), int(pos[-2]), int(pos[-1]))
+
 
 get_bytes_per_voxel = {'uint8': np.dtype('uint8').itemsize,
                        'uint16': np.dtype('uint16').itemsize,
