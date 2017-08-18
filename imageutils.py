@@ -208,7 +208,13 @@ class ImageUtils:
 
                 split_data = data[y_s: y_s + y_size, z_s: z_s + z_size, x_s: x_s + x_size]
                 im = nib.Nifti1Image(split_data, self.affine)
-                nib.save(im, split_names[i + j])
+                
+                t = time()
+                nib.save(im, split_names[start_index + j])
+                total_write_time += time() - t
+
+            start_index = end_index + 1
+        return total_read_time, total_write_time, total_seek_time, total_seek_number                    
 
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
                               extension="nii", benchmark=False):
@@ -726,6 +732,7 @@ def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx,
     split_positions - a list of all the read split's positions
     y_size          - the first dimension of the reconstructed image's array size
     z_size          - the second dimension of the reconstructed image's array size
+    split_shape     - shape of splits (for use with cwrites only)
 
     Returns: the "correct" last split, its index in splits, and its end position
     """
@@ -1041,7 +1048,6 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
     seek_number = 0
 
     no_seek = 0
-    prev_tell = 0
 
     for k in sorted(data_dict.keys()):
 
@@ -1054,7 +1060,6 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
             seek_number += 1
             seek_time += time() - seek_start
 
-        prev_tell = to_file.tell()
 
         data_bytes = data_dict[k]
 
@@ -1193,32 +1198,3 @@ def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype
         if slice_remainder != 0:
             output.write(np.zeros((first_dim, second_dim, slice_third_dim), dtype=dtype).tobytes('F'))
 
-
-# TODO:Not yet fully implemented
-class Legend:
-    def __init__(self, filename, is_img):
-        self.nib = is_img
-        self.pos = 0
-
-        # Not even sure that this can or should be done
-        try:
-            if not is_img:
-                self.contents = open(filename, 'r')
-            else:
-                self.contents = nib.load(filename).get_data().flatten()
-        except:
-            print "ERROR: Legend is not a text file or a nibabel-supported image"
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        if not self.nib:
-            self.contents.close()
-
-    def get_next_block():
-        if not self.nib:
-            return self.contents.readline()
-        else:
-            self.pos += 1
-            return str(int(self.contents[self.pos - 1])).zfill(4)
