@@ -10,12 +10,11 @@ import os
 import logging
 from enum import Enum
 import gzip
-
+from urlparse import urlparse
 
 class Merge(Enum):
     clustered = 0
     multiple = 1
-
 
 class ImageUtils:
     """ Helper utility class for performing operations on images"""
@@ -34,7 +33,11 @@ class ImageUtils:
         self.utils = utils
         self.filepath = filepath
         print filepath
+
+
         self.proxy = self.load_image(filepath)
+
+
         self.extension = split_ext(filepath)[1]
 
         self.header = None
@@ -702,29 +705,41 @@ class ImageUtils:
         else:
             return None
 
-    def load_image(self, filepath, in_hdfs=None):
 
-        """Load image into nibabel
-        Keyword arguments:
-        filepath                        : The absolute, relative path, or HDFS URL of the image
-                                          **Note: If in_hdfs parameter is not set and file is located in HDFS, it is necessary that the path provided is
-                                                an HDFS URL or an absolute/relative path with the '_HDFSUTILS_FLAG_' flag as prefix, or else it will
-                                                conclude that file is located in local filesystem.
-        in_hdfs                         : boolean variable indicating if image is located in HDFS or local filesystem. By default is set to None.
-                                          If not set (i.e. None), the function will attempt to determine where the file is located.
-        """
+    def _parse_image(self, filepath):
 
-        if self.utils is None:
-            in_hdfs = False
-        elif in_hdfs is None:
-            in_hdfs = self.utils.is_hdfs_uri(filepath)
+        o = urlparse(filepath)
+        scheme = o.scheme
+        path = o.path
 
-        if in_hdfs:
-            fh = None
-            # gets hdfs path in the case an hdfs uri was provided
-            filepath = self.utils.hdfs_path(filepath)
+        # for local
+        if scheme == "":
+            return "local"
+        # for hdfs:
+        elif scheme == "hdfs":
+            return "hdfs"
+        # not supported currently
+        else:
+            return ""
 
-            with self.utils.client.read(filepath) as reader:
+
+
+    def load_image(self, filepath):
+
+        file_source = self._parse_image(filepath)
+
+        # if file_source == "local":
+        #     pass
+        #
+        # elif file_source == "hdfs":
+        #     self.utils =
+        #
+        # else:
+        #     raise ValueError('Currently unsupported file-format')
+        # hdfs
+        if self.utils:
+
+            with self.utils.client.read(self.utils.filepath) as reader:
                 stream = reader.read()
                 if self.is_gzipped(filepath, stream[:2]):
                     fh = nib.FileHolder(fileobj=GzipFile(fileobj=BytesIO(stream)))
@@ -738,6 +753,8 @@ class ImageUtils:
                 else:
                     print('ERROR: currently unsupported file-format')
                     sys.exit(1)
+
+        # local
         elif not os.path.isfile(filepath):
             logging.warn("File does not exist in HDFS nor in Local FS. Will only be able to reconstruct image...")
             return None
@@ -1205,37 +1222,5 @@ get_bytes_per_voxel = {'uint8': np.dtype('uint8').itemsize,
                        }
 
 
-def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype, mem=None):
-    """ Function that generates a zero-filled NIFTI-1 image.
-    Keyword arguments:
-    output_filename               : the filename of the resulting output file
-    first_dim                     : the first dimension's (x?) size
-    second_dim                    : the second dimension's (y?) size
-    third_dim                     : the third dimension's (z?) size
-    dtye                          : the Numpy datatype of the resulting image
-    mem                           : the amount of available memory. By default it will only write one slice of zero-valued voxels at a time
-    """
-    with open(output_filename, 'wb') as output:
-        generate_header(output_fo, first_dim, second_dim, third_dim, dtype)
 
-        bytes_per_voxel = header['bitpix'] / 8
-
-        slice_bytes = bytes_per_voxel * (first_dim * second_dim)
-
-        slice_third_dim = 1
-        slice_remainder = 0
-
-        if mem is not None:
-            slice_third_dim = mem / slice_bytes
-            slice_remainder = (bytes_per_voxel * (first_dim * second_dim * third_dim)) % (slice_bytes * slice_third_dim)
-            print slice_remainder
-
-        slice_arr = np.zeros((first_dim, second_dim, slice_third_dim), dtype=dtype)
-
-        print "Filling image..."
-        for x in range(0, third_dim / slice_third_dim):
-            output.write(slice_arr.tobytes('F'))
-
-        if slice_remainder != 0:
-            output.write(np.zeros((first_dim, second_dim, slice_third_dim), dtype=dtype).tobytes('F'))
 
