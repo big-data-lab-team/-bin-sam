@@ -24,8 +24,8 @@ ori_image_hdd = "/data/bigbrain_40microns.nii"
 out_dir_hdd = "/data/gao/blocks125"
 
 
-out_dir_hdfs_hdd = "/data/gao/blocks125"
-
+# out_dir_hdfs_hdd = "/data/gao/blocks125"
+out_dir_hdfs_hdd = "/data/gao/blocks125_cw"
 csv_file_hdfs_hdd = "/data/gao/mwrites_hdfs_hdd.dat"
 
 # SSD:
@@ -46,12 +46,14 @@ files = {
     "ssd": (ori_image_ssd, out_dir_hdfs_ssd, csv_file_hdfs_ssd)
 }
 
-def benchmark_mwrites(mem, ori_image, out_dir):
+def benchmark_cwrites(mem, ori_image, out_dir):
     # img = img_utils.ImageUtils(ori_image, utils=hdfsutil.HDFSUtil(ori_image, name_node_url=name_node_url, user=user))
     img = img_utils.ImageUtils(ori_image)
     s_time = time()
-    total_read_time, total_write_time, total_seek_time, total_seek_number = img.split_multiple_writes(Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
-                          extension="nii", benchmark=True)
+    total_read_time, total_write_time, total_seek_time, total_seek_number = img.split_clustered_writes(Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
+                          extension="nii")
+
+
     total_time = time() - s_time
     print "mem = {}, takes {}".format(mem, total_time)
 
@@ -85,10 +87,8 @@ def main():
             print "mem = {}".format(mem)
             os.system("echo 3 | sudo tee /proc/sys/vm/drop_caches")
             os.system("hdfs dfs -rm -r {}/*".format(files[disk][1]))
-            print files[disk][1]
-            data = benchmark_mwrites(mem=mem, ori_image=files[disk][0], out_dir=files[disk][1])
+            data = benchmark_cwrites(mem=mem, ori_image=files[disk][0], out_dir=files[disk][1])
             data_dict[mem] = data
-
         write_to_csv(data_dict, files[disk][2])
 
 if __name__ == '__main__':
