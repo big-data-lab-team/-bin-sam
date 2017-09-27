@@ -711,41 +711,29 @@ class ImageUtils:
         else:
             return None
 
+    def load_image(self, filepath, in_hdfs=None):
 
-    def _parse_image(self, filepath):
+        """Load image into nibabel
+        Keyword arguments:
+        filepath                        : The absolute, relative path, or HDFS URL of the image
+                                          **Note: If in_hdfs parameter is not set and file is located in HDFS, it is necessary that the path provided is
+                                                an HDFS URL or an absolute/relative path with the '_HDFSUTILS_FLAG_' flag as prefix, or else it will
+                                                conclude that file is located in local filesystem.
+        in_hdfs                         : boolean variable indicating if image is located in HDFS or local filesystem. By default is set to None.
+                                          If not set (i.e. None), the function will attempt to determine where the file is located.
+        """
 
-        o = urlparse(filepath)
-        scheme = o.scheme
-        path = o.path
+        if self.utils is None:
+            in_hdfs = False
+        elif in_hdfs is None:
+            in_hdfs = self.utils.is_hdfs_uri(filepath)
 
-        # for local
-        if scheme == "":
-            return "local"
-        # for hdfs:
-        elif scheme == "hdfs":
-            return "hdfs"
-        # not supported currently
-        else:
-            return ""
+        if in_hdfs:
+            fh = None
+            # gets hdfs path in the case an hdfs uri was provided
+            filepath = self.utils.hdfs_path(filepath)
 
-
-
-    def load_image(self, filepath):
-
-        file_source = self._parse_image(filepath)
-
-        # if file_source == "local":
-        #     pass
-        #
-        # elif file_source == "hdfs":
-        #     self.utils =
-        #
-        # else:
-        #     raise ValueError('Currently unsupported file-format')
-        # hdfs
-        if self.utils:
-
-            with self.utils.client.read(self.utils.filepath) as reader:
+            with self.utils.client.read(filepath) as reader:
                 stream = reader.read()
                 if self.is_gzipped(filepath, stream[:2]):
                     fh = nib.FileHolder(fileobj=GzipFile(fileobj=BytesIO(stream)))
@@ -759,8 +747,6 @@ class ImageUtils:
                 else:
                     print('ERROR: currently unsupported file-format')
                     sys.exit(1)
-
-        # local
         elif not os.path.isfile(filepath):
             logging.warn("File does not exist in HDFS nor in Local FS. Will only be able to reconstruct image...")
             return None
