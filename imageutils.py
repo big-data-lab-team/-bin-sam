@@ -33,7 +33,7 @@ class ImageUtils:
 
         self.utils = utils
         self.filepath = filepath
-        print filepath
+        print(filepath)
 
 
         self.proxy = self.load_image(filepath)
@@ -77,7 +77,7 @@ class ImageUtils:
             if self.proxy is None:
                 raise AttributeError("Cannot split an image that has not yet been created.")
         except AttributeError as aerr:
-            print 'AttributeError: ', aerr
+            print('AttributeError: ', aerr)
             sys.exit(1)
 
         num_x_iters = int(ceil(self.proxy.dataobj.shape[2] / third_dim))
@@ -201,7 +201,7 @@ class ImageUtils:
             num_splits = 1
 
         if num_splits == 0:
-            print 'ERROR: available memory is too low'
+            print('ERROR: available memory is too low')
             sys.exit(1)
 
         total_seek_number += len(split_names)        
@@ -221,7 +221,7 @@ class ImageUtils:
             end_index, end_pos = adjust_end_read(split_names, start_pos, split_pos, end_pos, start_index,
                                      end_index, split_pos_in_range, Y_size, Z_size, (y_size, z_size, x_size))
         
-            print "Reading from {0} at index {1} --> {2} at index {3}".format(start_pos, start_index, end_pos, end_index)
+            print("Reading from {0} at index {1} --> {2} at index {3}".format(start_pos, start_index, end_pos, end_index))
             extracted_shape = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1], end_pos[2] - start_pos[2])
 
             if extracted_shape[0] < Y_size:
@@ -251,11 +251,13 @@ class ImageUtils:
                 x_e = split_start[2] + x_size
 
                 split_data = data[split_start[0] : y_e, split_start[1] : z_e, split_start[2] : x_e]
+                # we cannot save .nii image to hdfs this way.
                 # im = nib.Nifti1Image(split_data, self.affine)
                 
                 t = time()
 
-                write_array_to_file(split_data, split_names[start_index + j], write_offset=  self.header_size, hdfs_client=hdfs_client)
+                write_array_to_file(split_data, split_names[start_index + j], write_offset= self.header_size, hdfs_client=hdfs_client)
+                # Again, we cannot save .nii image to hdfs this way.
                 # nib.save(im, split_names[start_index + j])
                 total_write_time += time() - t
 
@@ -305,7 +307,7 @@ class ImageUtils:
         generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype(), hdfs_client)
         # get all write offset of all split names
 
-        print "Get split indexes..."
+        print("Get split indexes...")
         split_indexes = get_indexes_of_all_splits(legend_file, Y_size, Z_size, hdfs_client)
         # drop the remainder which is less than one slice
         # if mem is less than one slice, then set mem to one slice
@@ -350,7 +352,7 @@ class ImageUtils:
                     y_index_max = y_index_min + split.split_y
                     z_index_max = z_index_min + split.split_z
                     # time to write to file
-                    print split_name
+                    print(split_name)
                     data = data_in_range[y_index_min: y_index_max, z_index_min: z_index_max,
                            X_index_min - from_x_index: X_index_max - from_x_index + 1]
                     seek_time, write_time, seek_number = write_array_to_file(data, split_name, write_offset, hdfs_client=hdfs_client)
@@ -370,7 +372,7 @@ class ImageUtils:
             # clear
             del data_in_range
 
-            print "takes ", time() - st
+            print("takes ", time() - st)
 
         return total_read_time, total_write_time, total_seek_time, total_seek_number
 
@@ -384,10 +386,10 @@ class ImageUtils:
         mem             : the amount of available memory in bytes
         """
         if not self.filepath.endswith('.gz'):
-            print "The reconstucted image is going to be uncompressed..."
+            print("The reconstucted image is going to be uncompressed...")
             reconstructed = open(self.filepath, self.file_access())
         else:
-            print "The reconstucted image is going to be compressed..."
+            print("The reconstucted image is going to be compressed...")
             reconstructed = gzip.open(self.filepath, self.file_access())
 
         if self.proxy is None:
@@ -395,7 +397,7 @@ class ImageUtils:
 
         m_type = Merge[merge_func]
         if input_compressed:
-            print "The input splits are compressed.."
+            print("The input splits are compressed..")
 
         total_read_time, total_write_time, total_seek_time, total_seek_number = self.merge_types[m_type](
             reconstructed, legend, mem, input_compressed, benchmark)
@@ -452,7 +454,7 @@ class ImageUtils:
                                                z_size, x_size)
             else:
                 end_index = start_index
-                print "Naive reading from split index {0} -> {1}".format(start_index, end_index)
+                print("Naive reading from split index {0} -> {1}".format(start_index, end_index))
 
 
             read_time, assign_time = self.insert_elems(data_dict, splits, start_index, end_index, bytes_per_voxel,
@@ -474,10 +476,10 @@ class ImageUtils:
             else:
                 break
 
-        print "Total time spent reading: ", total_read
-        print "Total time spent seeking: ", total_seek
-        print "Total number of seeks: ", total_num_seeks
-        print "Total time spent writing: ", total_write
+        print("Total time spent reading: ", total_read)
+        print("Total time spent seeking: ", total_seek)
+        print("Total number of seeks: ", total_num_seeks)
+        print("Total time spent writing: ", total_write)
 
         return total_read, total_write, total_seek, total_num_seeks
 
@@ -593,7 +595,7 @@ class ImageUtils:
         remaining_mem -= start_im.split_bytes
 
         if remaining_mem < 0:
-            print "ERROR: insufficient memory provided"
+            print("ERROR: insufficient memory provided")
             sys.exit(1)
 
         split_positions = []
@@ -626,7 +628,7 @@ class ImageUtils:
 
         end_idx, end_pos = adjust_end_read(splits, start_pos, split_pos, end_pos, start_idx, end_idx, split_positions,
                                            y_size, z_size)
-        print "Reading from position {0} (index {1}) -> {2} (index {3})".format(start_pos, start_idx, end_pos, end_idx)
+        print("Reading from position {0} (index {1}) -> {2} (index {3})".format(start_pos, start_idx, end_pos, end_idx))
         return end_idx
 
     def multiple_reads(self, reconstructed, legend, mem, input_compressed, benchmark):
@@ -706,7 +708,7 @@ class ImageUtils:
             del data_dict
 
         if benchmark:
-            print total_read_time, total_write_time, total_seek_time, total_seek_number
+            print(total_read_time, total_write_time, total_seek_time, total_seek_number)
             return total_read_time, total_write_time, total_seek_time, total_seek_number
         else:
             return None
@@ -755,7 +757,7 @@ class ImageUtils:
         try:
             return nib.load(filepath)
         except:
-            print "ERROR: Unable to load image into nibabel"
+            print("ERROR: Unable to load image into nibabel")
             sys.exit(1)
 
     def file_access(self):
@@ -860,7 +862,7 @@ def generate_legend_file(split_names, legend_file_name, out_dir, hdfs_client=Non
     """
     legend_file = '{0}/{1}'.format(out_dir, legend_file_name)
 
-    if not hdfs_client:
+    if hdfs_client is not None:
         with open(legend_file, 'a+') as f:
             for split_name in split_names:
                 f.write('{0}\n'.format(split_name))
@@ -871,13 +873,14 @@ def generate_legend_file(split_names, legend_file_name, out_dir, hdfs_client=Non
 
     return legend_file
 
+
 def generate_headers_of_splits(split_names, y_size, z_size, x_size, dtype, hdfs_client=None):
     """
     generate headers of each splits based on the shape and dtype
     """
     header = generate_header(y_size, z_size, x_size, dtype)
 
-    if not hdfs_client:
+    if hdfs_client is not None:
         for split_name in split_names:
             with open(split_name, 'w+b') as f:
                 header.write_to(f)
@@ -885,7 +888,6 @@ def generate_headers_of_splits(split_names, y_size, z_size, x_size, dtype, hdfs_
         for split_name in split_names:
             with hdfs_client.write(split_name) as f:
                 header.write_to(f)
-
 
 
 def index_to_voxel(index, Y_size, Z_size):
@@ -934,7 +936,7 @@ class Split:
 
     def __init__(self, split_name, hdfs_client=None):
         self.split_name = split_name
-        if not hdfs_client:
+        if hdfs_client is not None:
             self.split_proxy = nib.load(split_name)
         else:
             with hdfs_client.read(split_name) as split:
@@ -1041,7 +1043,7 @@ def get_indexes_of_all_splits(legend, Y_size, Z_size, hdfs_client=None):
     """
     split_indexes = {}
 
-    if not hdfs_client:
+    if hdfs_client is not None:
         with open(legend, "r") as f:
             for split_name in f:
                 split_name = split_name.strip()
@@ -1097,7 +1099,7 @@ def write_array_to_file(data_array, to_file, write_offset, hdfs_client=None):
     seek_time = 0
     seek_number = 0
     data = data_array.tobytes('F')
-    if not hdfs_client:
+    if hdfs_client is not None:
         seek_start = time()
         with open(to_file, 'a+b') as f:
             f.seek(write_offset, 0)
@@ -1177,7 +1179,7 @@ def generate_header(first_dim, second_dim, third_dim, dtype):
         return header
 
     except:
-        print "ERROR: Unable to generate header. Please verify that the dimensions and datatype are valid."
+        print("ERROR: Unable to generate header. Please verify that the dimensions and datatype are valid.")
         sys.exit(1)
 
 
