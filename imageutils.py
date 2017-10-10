@@ -188,6 +188,8 @@ class ImageUtils:
         split_names = generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix,
                                            extension)
         legend_file = generate_legend_file(split_names, "legend.txt", out_dir, hdfs_client=hdfs_client)
+
+        # in order to reduce overhead when reading headers of splits from hdfs, create a header cache in the local environment
         split_meta_cache = generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype(), hdfs_client=hdfs_client)
 
         start_index = end_index = 0
@@ -301,7 +303,9 @@ class ImageUtils:
         split_names = generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix,
                                            extension)
         generate_legend_file(split_names, "legend.txt", out_dir, hdfs_client)
+
         # generate all the headers for each split
+        # in order to reduce overhead when reading headers of splits from hdfs, create a header cache in the local environment
         print("create split meta data dictionary...")
         split_meta_cache = generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype(), hdfs_client)
 
@@ -337,7 +341,7 @@ class ImageUtils:
                 total_seek_number += 1
 
             one_round_split_metadata = {}
-            # iterate all splits to see if in the read range:
+            # create split metadata for all splits(position, write_range, etc.)
             for split_name in split_names:
                 if check_in_range(next_read_index, split_indexes[split_name]):
                     split = split_meta_cache[split_name]
@@ -349,6 +353,7 @@ class ImageUtils:
                     one_round_split_metadata[split_name] = \
                         (y_index_min, y_index_max, z_index_min, z_index_max, X_index_min - from_x_index, X_index_max - from_x_index + 1)
 
+            # Using multi-threading to send data to hdfs in parallel, which will parallelize writing process.
             # nThreads: number of threads that are working on writing data at the same time.
             print("start {} threads to write data...".format(nThreads))
             # separate all the splits' metadata to several pieces, each piece contains #nThreads splits' metadata.
