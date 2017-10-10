@@ -188,7 +188,7 @@ class ImageUtils:
         split_names = generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix,
                                            extension)
         legend_file = generate_legend_file(split_names, "legend.txt", out_dir, hdfs_client=hdfs_client)
-        generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype(), hdfs_client=hdfs_client)
+        split_meta_cache = generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype(), hdfs_client=hdfs_client)
 
         start_index = end_index = 0
 
@@ -219,7 +219,7 @@ class ImageUtils:
             split_pos_in_range = [ pos_to_int_tuple(split_ext(x)[0].split('_')) for x in split_names[start_index:end_index + 1] ]     
 
             end_index, end_pos = adjust_end_read(split_names, start_pos, split_pos, end_pos, start_index,
-                                     end_index, split_pos_in_range, Y_size, Z_size, (y_size, z_size, x_size))
+                                     end_index, split_pos_in_range, Y_size, Z_size, split_meta_cache, (y_size, z_size, x_size))
         
             print("Reading from {0} at index {1} --> {2} at index {3}".format(start_pos, start_index, end_pos, end_index))
             extracted_shape = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1], end_pos[2] - start_pos[2])
@@ -300,15 +300,14 @@ class ImageUtils:
         # get all split_names and write them to the legend file
         split_names = generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix,
                                            extension)
-        # legend_file = generate_legend_file(split_names, "legend.txt", out_dir)
-        legend_file = generate_legend_file(split_names, "legend.txt", out_dir, hdfs_client)
+        generate_legend_file(split_names, "legend.txt", out_dir, hdfs_client)
         # generate all the headers for each split
-        # generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype())
-        generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype(), hdfs_client)
-        # get all write offset of all split names
+        print("create split meta data dictionary...")
+        split_meta_cache = generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype(), hdfs_client)
+
 
         print("Get split indexes...")
-        split_indexes = get_indexes_of_all_splits(legend_file, Y_size, Z_size, hdfs_client)
+        split_indexes = get_indexes_of_all_splits(split_names, split_meta_cache, Y_size, Z_size)
         # drop the remainder which is less than one slice
         # if mem is less than one slice, then set mem to one slice
         mem = mem - mem % (Y_size * Z_size * bytes_per_voxel) \
@@ -339,7 +338,7 @@ class ImageUtils:
                 in_range = check_in_range(next_read_index, split_indexes[split_name])
                 if in_range:
 
-                    split = Split(split_name, hdfs_client=hdfs_client)
+                    split = split_meta_cache[split_name]
 
                     # extract all the slices that in the read range
                     # X_index: index that in original image's coordinate system
@@ -356,7 +355,7 @@ class ImageUtils:
                     data = data_in_range[y_index_min: y_index_max, z_index_min: z_index_max,
                            X_index_min - from_x_index: X_index_max - from_x_index + 1]
                     seek_time, write_time, seek_number = write_array_to_file(data, split_name, write_offset, hdfs_client=hdfs_client)
-
+                    del data
                     if benchmark:
                         total_write_time += write_time
                         total_seek_time += seek_time
@@ -766,7 +765,8 @@ class ImageUtils:
             return "w+b"
         return "r+b"
 
-def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx, split_positions, y_size, z_size, split_shape=None):
+
+def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx, split_positions, y_size, z_size, split_meta_cache, split_shape=None):
     """
     Adjusts the end split should the read not be a complete slice, complete row, or incomplete row
 
@@ -833,7 +833,7 @@ def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx,
     # load new end
     if prev_end_idx != end_idx:
         try:
-            split_im = Split(splits[end_idx].strip())
+            split_im = split_meta_cache[splits[end_idx].strip()]
             split_pos = pos_to_int_tuple(split_im.split_pos)
             end_pos = (split_pos[0] + split_im.split_y, split_pos[1] + split_im.split_z, split_pos[2] + split_im.split_x)
         except:
@@ -878,17 +878,21 @@ def generate_headers_of_splits(split_names, y_size, z_size, x_size, dtype, hdfs_
     """
     generate headers of each splits based on the shape and dtype
     """
+    split_meta_cache = {}
     header = generate_header(y_size, z_size, x_size, dtype)
 
-    if hdfs_client is not None:
+    if hdfs_client is None:
         for split_name in split_names:
             with open(split_name, 'w+b') as f:
                 header.write_to(f)
+            split_meta_cache[split_name] = Split(split_name, header)
     else:
         for split_name in split_names:
             with hdfs_client.write(split_name) as f:
                 header.write_to(f)
+            split_meta_cache[split_name] = Split(split_name, header)
 
+    return split_meta_cache
 
 def index_to_voxel(index, Y_size, Z_size):
     """
@@ -934,21 +938,23 @@ class Split:
     It contains all the info of one split
     """
 
-    def __init__(self, split_name, hdfs_client=None):
+    def __init__(self, split_name, header=None):
+
         self.split_name = split_name
-        if hdfs_client is not None:
-            self.split_proxy = nib.load(split_name)
+
+        # image is located in local file system
+        if header is None:
+            self.header = nib.load(split_name).header
+
         else:
-            with hdfs_client.read(split_name) as split:
-                fh = nib.FileHolder(fileobj=BytesIO(split.read()))
-                self.split_proxy = nib.Nifti1Image.from_file_map({'header': fh, 'image': fh})
+            self.header = header
         self._get_info_from(split_name)
 
     def _get_info_from(self, split_name):
         self.split_pos = split_ext(split_name)[0].split('_')
-        self.split_header_size = self.split_proxy.header.single_vox_offset
-        self.bytes_per_voxel = self.split_proxy.header['bitpix'] / 8
-        (self.split_y, self.split_z, self.split_x) = self.split_proxy.header.get_data_shape()
+        self.split_header_size = self.header.single_vox_offset
+        self.bytes_per_voxel = self.header['bitpix'] / 8
+        (self.split_y, self.split_z, self.split_x) = self.header.get_data_shape()
         self.split_bytes = self.bytes_per_voxel * (self.split_y * self.split_x * self.split_z)
 
 
@@ -1035,31 +1041,20 @@ def extract_rows(split, data_dict, index_list, write_index, input_compressed, be
     return read_time_one_r
 
 
-def get_indexes_of_all_splits(legend, Y_size, Z_size, hdfs_client=None):
+def get_indexes_of_all_splits(split_names, split_meta_cache, Y_size, Z_size):
     """
     get writing offsets of all splits, add them to a dictionary
     key-> split_name
     value-> a writing offsets list
     """
     split_indexes = {}
-
-    if hdfs_client is not None:
-        with open(legend, "r") as f:
-            for split_name in f:
-                split_name = split_name.strip()
-                split = Split(split_name)
-                index_dict = get_indexes_of_split(split, Y_size, Z_size)
-                split_indexes[split.split_name] = index_dict
-    else:
-        with hdfs_client.read(legend) as f:
-            for split_name in f:
-                split_name = split_name.strip()
-                split = Split(split_name, hdfs_client=hdfs_client)
-                index_dict = get_indexes_of_split(split, Y_size, Z_size)
-                split_indexes[split.split_name] = index_dict
+    for split_name in split_names:
+        split_name = split_name.strip()
+        split = split_meta_cache[split_name]
+        index_dict = get_indexes_of_split(split, Y_size, Z_size)
+        split_indexes[split.split_name] = index_dict
 
     return split_indexes
-
 
 
 def get_indexes_of_split(split, Y_size, Z_size):
@@ -1112,8 +1107,10 @@ def write_array_to_file(data_array, to_file, write_offset, hdfs_client=None):
             write_time += time() - write_start
     else:
         write_start = time()
+        with hdfs_client.write(to_file, append=True) as writer:
+            writer.write(data)
         seek_number += 1
-        hdfs_client.write(to_file, data=data, append=True)
+        # hdfs_client.write(to_file, data=data, append=True)
         write_time += time() - write_start
 
     del data_array
