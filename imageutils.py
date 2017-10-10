@@ -11,7 +11,7 @@ import logging
 from enum import Enum
 import gzip
 from urlparse import urlparse
-
+import threading
 
 class Merge(Enum):
     clustered = 0
@@ -265,7 +265,7 @@ class ImageUtils:
         return total_read_time, total_write_time, total_seek_time, total_seek_number                    
 
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
-                              extension="nii", hdfs_client=None, benchmark=False):
+                              extension="nii", hdfs_client=None, nThreads=1, benchmark=False):
         """
         Split the input image into several splits, all share with the same shape
         For now only support .nii extension
@@ -327,40 +327,57 @@ class ImageUtils:
             to_x_index = index_to_voxel(next_read_index[1] + 1, Y_size, Z_size)[2]
 
             st_read_time = time()
+            print "start reading data to memory..."
             data_in_range = self.proxy.dataobj[..., from_x_index: to_x_index]
 
             if benchmark:
-                total_read_time += time() - st_read_time
+                end_time = time() - st_read_time
+                total_read_time += end_time
+                print "reading data takes ", end_time
                 total_seek_number += 1
 
+            one_round_split_metadata = {}
             # iterate all splits to see if in the read range:
             for split_name in split_names:
-                in_range = check_in_range(next_read_index, split_indexes[split_name])
-                if in_range:
-
+                if check_in_range(next_read_index, split_indexes[split_name]):
                     split = split_meta_cache[split_name]
-
-                    # extract all the slices that in the read range
-                    # X_index: index that in original image's coordinate system
-                    # x_index: index that in the split's coordinate system
-                    (X_index_min, X_index_max, x_index_min, x_index_max) = extract_slices_range(split, next_read_index,
-                                                                                                Y_size, Z_size)
-                    write_offset = split.split_header_size + x_index_min * split.split_y * split.split_z * split.bytes_per_voxel
+                    (X_index_min, X_index_max, x_index_min, x_index_max) = extract_slices_range(split, next_read_index, Y_size, Z_size)
                     y_index_min = int(split.split_pos[-3])
                     z_index_min = int(split.split_pos[-2])
                     y_index_max = y_index_min + split.split_y
                     z_index_max = z_index_min + split.split_z
-                    # time to write to file
-                    print(split_name)
-                    data = data_in_range[y_index_min: y_index_max, z_index_min: z_index_max,
-                           X_index_min - from_x_index: X_index_max - from_x_index + 1]
-                    seek_time, write_time, seek_number = write_array_to_file(data, split_name, write_offset, hdfs_client=hdfs_client)
+                    one_round_split_metadata[split_name] = \
+                        (y_index_min, y_index_max, z_index_min, z_index_max, X_index_min - from_x_index, X_index_max - from_x_index + 1)
+
+            # nThreads: number of threads that are working on writing data at the same time.
+            print("start {} threads to write data...".format(nThreads))
+            # separate all the splits' metadata to several pieces, each piece contains #nThreads splits' metadata.
+            caches = _split_arr(one_round_split_metadata.items(), nThreads)
+
+            st1 = time()
+
+            for thread_round in caches:
+                tds = []
+                # one split's metadata triggers one thread
+                for i in thread_round:
+                    ix = i[1]
+                    data = data_in_range[ix[0]: ix[1], ix[2]: ix[3], ix[4]: ix[5]]
+                    td = threading.Thread(target=write_array_to_file, args=(data, i[0], 0, hdfs_client))
+                    td.start()
+                    tds.append(td)
                     del data
-                    if benchmark:
-                        total_write_time += write_time
-                        total_seek_time += seek_time
-                        total_seek_number += seek_number
-            # update next read range..
+                for t in tds:
+                    t.join()
+
+            write_time = time() - st1
+            print("writing data takes ", write_time)
+            if benchmark:
+                total_write_time += write_time
+
+            # clean
+            del caches
+            del one_round_split_metadata
+
             next_read_index = (next_read_index[1] + 1, next_read_index[1] + voxels)
             #  last write, write no more than image size
             if next_read_index[1] >= original_img_voxels:
@@ -371,7 +388,7 @@ class ImageUtils:
             # clear
             del data_in_range
 
-            print("takes ", time() - st)
+            print "one memory load takes ", time() - st
 
         return total_read_time, total_write_time, total_seek_time, total_seek_number
 
@@ -862,7 +879,7 @@ def generate_legend_file(split_names, legend_file_name, out_dir, hdfs_client=Non
     """
     legend_file = '{0}/{1}'.format(out_dir, legend_file_name)
 
-    if hdfs_client is not None:
+    if hdfs_client is None:
         with open(legend_file, 'a+') as f:
             for split_name in split_names:
                 f.write('{0}\n'.format(split_name))
@@ -1094,7 +1111,7 @@ def write_array_to_file(data_array, to_file, write_offset, hdfs_client=None):
     seek_time = 0
     seek_number = 0
     data = data_array.tobytes('F')
-    if hdfs_client is not None:
+    if hdfs_client is None:
         seek_start = time()
         with open(to_file, 'a+b') as f:
             f.seek(write_offset, 0)
@@ -1233,6 +1250,16 @@ def split_ext(filepath):
 
 def pos_to_int_tuple(pos):
     return (int(pos[-3]), int(pos[-2]), int(pos[-1]))
+
+
+def _split_arr(arr, size):
+    arrs = []
+    while len(arr) > size:
+        pice = arr[:size]
+        arrs.append(pice)
+        arr = arr[size:]
+    arrs.append(arr)
+    return arrs
 
 
 get_bytes_per_voxel = {'uint8': np.dtype('uint8').itemsize,
