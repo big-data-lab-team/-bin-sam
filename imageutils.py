@@ -151,30 +151,67 @@ class ImageUtils:
             is_rem_y = False
 
 
-    def load_split(self, split_name, y_size, z_size, x_size):
+    def load_split(self, split_name, y_size, z_size, x_size, overlaps=0):
 
-        fn_pos = pos_to_int_tuple(split_ext(split_name)[0].split('_'))
-        start_pos = pos_to_int_tuple(fn_pos)
+        start_pos = pos_to_int_tuple(split_ext(split_name)[0].split('_'))
 
-        data = self.proxy.dataobj[start_pos[0]:start_pos[0] + y_size, start_pos[1]:start_pos[1] + z_size, start_pos[2]:start_pos[2] + x_size]
+        Y_size, Z_size, X_size = self.header.get_data_shape()            
 
-        return (split_name, (self.affine, data))
+        start_y = start_pos[0] - overlaps if start_pos[0] - overlaps > 0 else 0
+        end_y = start_pos[0] + y_size + overlaps if start_pos[0] + y_size + overlaps < Y_size else Y_size
 
+        start_z = start_pos[1] - overlaps if start_pos[1] - overlaps > 0 else 0
+        end_z = start_pos[1] + z_size + overlaps if start_pos[1] + z_size + overlaps < Z_size else Z_size
+
+        start_x = start_pos[2] - overlaps if start_pos[2] - overlaps > 0 else 0
+        end_x = start_pos[2] + x_size + overlaps if start_pos[2] + x_size + overlaps < X_size else X_size
+
+        data = self.proxy.dataobj[start_y:end_y, start_z:end_z, start_x:end_x]
+
+        return (split_name, (overlaps, (y_size,z_size,x_size) ,data))
+
+    def strip_overlap(self, split_fn, split_data):
+
+        overlaps = split_data[0]
+        y_size, z_size, x_size = split_data[1]
+        data = split_data[2]
+    
+        start_pos = pos_to_int_tuple(split_ext(split_fn)[0].split('_'))
+
+        Y_size, Z_size, X_size = self.header.get_data_shape()
+
+        start_y = overlaps if start_pos[0] - overlaps > 0 else start_pos[0]
+        end_y = -overlaps if start_pos[0] + y_size + overlaps <= Y_size else -(Y_size - (start_pos[0] + y_size))
+
+        start_z = overlaps if start_pos[1] - overlaps > 0 else start_pos[1]
+        end_z = -overlaps if start_pos[1] + z_size + overlaps <= Z_size else -(Z_size - (start_pos[1] + z_size))
+
+        start_x = overlaps if start_pos[2] - overlaps > 0 else start_pos[2]
+        end_x = -overlaps if start_pos[2] + x_size + overlaps <= X_size else -(X_size - (start_pos[2] + x_size)) 
+
+        data = data[start_y:end_y if end_y != 0 else None, start_z:end_z if end_z != 0 else None, start_x:end_x if end_x != 0 else None]
+
+        return (split_fn, (0, (y_size,z_size,x_size), data))
+        
     def save_split(self, split_fn, split_data):
 
-        im = nib.Nifti1Image(split_data[1], split_data[0])
+        if split_data[0] != 0:
+            # For now, as the the overlap information should be included in the header, but is not
+            # Once information is contained within header, saving splits with overlaps will be possible
+            split_fn, split_data = self.strip_overlap(split_fn, split_data)
+        
+        im = nib.Nifti1Image(split_data[2], self.affine)
         nib.save(im, split_fn)
 
         return (split_fn, "SUCESS")
 
-    def create_split_RDD(self, sc, Y_splits, Z_splits, X_splits, filename_prefix="bigbrain", extension="nii", output_dir = None):
+    def create_split_RDD(self, sc, Y_splits, Z_splits, X_splits, filename_prefix="bigbrain", extension="nii", output_dir=None, partitions=None, overlaps=0):
 
         if output_dir is None:
             output_dir = os.get_cwd()
 
         # calculate remainder based on the original image file
         Y_size, Z_size, X_size = self.header.get_data_shape()
-        bytes_per_voxel = self.header['bitpix'] / 8
         original_img_voxels = X_size * Y_size * Z_size
 
         if X_size % X_splits != 0 or Z_size % Z_splits != 0 or Y_size % Y_splits != 0:
@@ -183,18 +220,13 @@ class ImageUtils:
         z_size = Z_size / Z_splits
         y_size = Y_size / Y_splits
 
-
-        print y_size, z_size, x_size
-
         # get all split_names and write them to the legend file
         split_names = generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, output_dir, filename_prefix,
                 extension)
 
-        it = iter(split_names)
-        empty_list = [None] * len(split_names)
-        empty_splits = zip(it, empty_list)
-        return sc.parallelize(empty_splits).map(lambda x: self.load_split(x[0], y_size, z_size, x_size))
-
+        if partitions is None:
+            return sc.parallelize(split_names).map(lambda x: self.load_split(x, y_size, z_size, x_size, overlaps))
+        return sc.parallelize(split_names, partitions).map(lambda x: self.load_split(x, y_size, z_size, x_size, overlaps))
 
 
 
