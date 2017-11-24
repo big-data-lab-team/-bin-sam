@@ -1,6 +1,6 @@
 import nibabel as nib
 from math import ceil
-import magic
+#import magic
 from gzip import GzipFile
 from io import BytesIO
 import sys
@@ -149,6 +149,54 @@ class ImageUtils:
                     is_rem_z = False
 
             is_rem_y = False
+
+
+    def load_split(self, split_name, y_size, z_size, x_size):
+
+        fn_pos = pos_to_int_tuple(split_ext(split_name)[0].split('_'))
+        start_pos = pos_to_int_tuple(fn_pos)
+
+        data = self.proxy.dataobj[start_pos[0]:start_pos[0] + y_size, start_pos[1]:start_pos[1] + z_size, start_pos[2]:start_pos[2] + x_size]
+
+        return (split_name, (self.affine, data))
+
+    def save_split(self, split_fn, split_data):
+
+        im = nib.Nifti1Image(split_data[1], split_data[0])
+        nib.save(im, split_fn)
+
+        return (split_fn, "SUCESS")
+
+    def create_split_RDD(self, sc, Y_splits, Z_splits, X_splits, filename_prefix="bigbrain", extension="nii", output_dir = None):
+
+        if output_dir is None:
+            output_dir = os.get_cwd()
+
+        # calculate remainder based on the original image file
+        Y_size, Z_size, X_size = self.header.get_data_shape()
+        bytes_per_voxel = self.header['bitpix'] / 8
+        original_img_voxels = X_size * Y_size * Z_size
+
+        if X_size % X_splits != 0 or Z_size % Z_splits != 0 or Y_size % Y_splits != 0:
+            raise Exception("There is remainder after splitting, please reset the y,z,x splits")
+        x_size = X_size / X_splits
+        z_size = Z_size / Z_splits
+        y_size = Y_size / Y_splits
+
+
+        print y_size, z_size, x_size
+
+        # get all split_names and write them to the legend file
+        split_names = generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, output_dir, filename_prefix,
+                extension)
+
+        it = iter(split_names)
+        empty_list = [None] * len(split_names)
+        empty_splits = zip(it, empty_list)
+        return sc.parallelize(empty_splits).map(lambda x: self.load_split(x[0], y_size, z_size, x_size))
+
+
+
 
     def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
                                extension="nii", hdfs_client=None):
