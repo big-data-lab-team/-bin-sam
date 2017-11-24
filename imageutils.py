@@ -1,6 +1,6 @@
 import nibabel as nib
 from math import ceil
-#import magic
+import magic
 from gzip import GzipFile
 from io import BytesIO
 import sys
