@@ -10,7 +10,6 @@ import os
 import logging
 from enum import Enum
 import gzip
-from urlparse import urlparse
 import threading
 
 class Merge(Enum):
@@ -155,7 +154,7 @@ class ImageUtils:
 
         start_pos = pos_to_int_tuple(split_ext(split_name)[0].split('_'))
 
-        Y_size, Z_size, X_size = self.header.get_data_shape()            
+        Y_size, Z_size, X_size = self.header.get_data_shape()
 
         start_y = start_pos[0] - overlaps if start_pos[0] - overlaps > 0 else 0
         end_y = start_pos[0] + y_size + overlaps if start_pos[0] + y_size + overlaps < Y_size else Y_size
@@ -168,14 +167,14 @@ class ImageUtils:
 
         data = self.proxy.dataobj[start_y:end_y, start_z:end_z, start_x:end_x]
 
-        return (split_name, (overlaps, (y_size,z_size,x_size) ,data))
+        return (split_name, (overlaps, (y_size, z_size, x_size), data))
 
     def strip_overlap(self, split_fn, split_data):
 
         overlaps = split_data[0]
         y_size, z_size, x_size = split_data[1]
         data = split_data[2]
-    
+
         start_pos = pos_to_int_tuple(split_ext(split_fn)[0].split('_'))
 
         Y_size, Z_size, X_size = self.header.get_data_shape()
@@ -187,19 +186,20 @@ class ImageUtils:
         end_z = -overlaps if start_pos[1] + z_size + overlaps <= Z_size else -(Z_size - (start_pos[1] + z_size))
 
         start_x = overlaps if start_pos[2] - overlaps > 0 else start_pos[2]
-        end_x = -overlaps if start_pos[2] + x_size + overlaps <= X_size else -(X_size - (start_pos[2] + x_size)) 
+        end_x = -overlaps if start_pos[2] + x_size + overlaps <= X_size else -(X_size - (start_pos[2] + x_size))
 
-        data = data[start_y:end_y if end_y != 0 else None, start_z:end_z if end_z != 0 else None, start_x:end_x if end_x != 0 else None]
+        data = data[start_y:end_y if end_y != 0 else None, start_z:end_z if end_z != 0 else None,
+               start_x:end_x if end_x != 0 else None]
 
-        return (split_fn, (0, (y_size,z_size,x_size), data))
-        
+        return (split_fn, (0, (y_size, z_size, x_size), data))
+
     def save_split(self, split_fn, split_data):
 
         if split_data[0] != 0:
             # For now, as the the overlap information should be included in the header, but is not
             # Once information is contained within header, saving splits with overlaps will be possible
             split_fn, split_data = self.strip_overlap(split_fn, split_data)
-        
+
         im = nib.Nifti1Image(split_data[2], self.affine)
         nib.save(im, split_fn)
 
@@ -231,7 +231,7 @@ class ImageUtils:
 
 
     def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
-                               extension="nii", hdfs_client=None):
+                               extension="nii", nThreads=1, hdfs_client=None):
         """
         Split the input image into several splits, all share with the same shape
         For now only supports Nifti1 images
@@ -243,15 +243,15 @@ class ImageUtils:
         :param mem: memory load each round
         :param filename_prefix: each split's prefix filename
         :param extension: extension of each split
+        :param nThreads: number of threads to trigger in each writing process
+        :param hdfs_client: hdfs client
         :return:
         """
-
 
         total_read_time = 0
         total_write_time = 0
         total_seek_time = 0
         total_seek_number = 0
-
 
         # calculate remainder based on the original image file
         Y_size, Z_size, X_size = self.header.get_data_shape()
@@ -286,7 +286,7 @@ class ImageUtils:
             print('ERROR: available memory is too low')
             sys.exit(1)
 
-        total_seek_number += len(split_names)        
+        total_seek_number += len(split_names)
 
         while start_index < len(split_names):
             start_pos = pos_to_int_tuple(split_ext(split_names[start_index])[0].split('_'))
@@ -294,15 +294,14 @@ class ImageUtils:
             end_index = start_index + num_splits - 1
 
             if end_index >= len(split_names):
-                end_index = len(split_names) - 1  
-                
+                end_index = len(split_names) - 1
+
             split_pos = pos_to_int_tuple(split_ext(split_names[end_index])[0].split('_'))
             end_pos = (split_pos[0] + y_size, split_pos[1] + z_size, split_pos[2] + x_size)
-            split_pos_in_range = [ pos_to_int_tuple(split_ext(x)[0].split('_')) for x in split_names[start_index:end_index + 1] ]     
+            split_pos_in_range = [pos_to_int_tuple(split_ext(x)[0].split('_')) for x in split_names[start_index:end_index + 1]]
 
             end_index, end_pos = adjust_end_read(split_names, start_pos, split_pos, end_pos, start_index,
                                      end_index, split_pos_in_range, Y_size, Z_size, split_meta_cache, (y_size, z_size, x_size))
-        
             print("Reading from {0} at index {1} --> {2} at index {3}".format(start_pos, start_index, end_pos, end_index))
             extracted_shape = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1], end_pos[2] - start_pos[2])
 
@@ -313,38 +312,50 @@ class ImageUtils:
             else:
                 total_seek_number += 1
 
-
             t = time()
-            
             data = None
 
             if end_pos[0] - start_pos[0] == Y_size and end_pos[1] - start_pos[1] == Z_size:
                 data = self.proxy.dataobj[..., start_pos[2]:end_pos[2]]
             else:
                 data = self.proxy.dataobj[start_pos[0]:end_pos[0], start_pos[1]:end_pos[1], start_pos[2]:end_pos[2]]
-            total_read_time += time() - t    
+            total_read_time += time() - t
+
+            one_round_split_metadata = {}
 
             for j in xrange(end_index - start_index + 1):
                 split_start = pos_to_int_tuple(split_ext(split_names[start_index + j])[0].split('_'))
-                split_start = (split_start[0] - start_pos[0], split_start[1] - start_pos[1], split_start[2] - start_pos[2])
-            
+                split_start = (
+                split_start[0] - start_pos[0], split_start[1] - start_pos[1], split_start[2] - start_pos[2])
                 y_e = split_start[0] + y_size
                 z_e = split_start[1] + z_size
                 x_e = split_start[2] + x_size
+                one_round_split_metadata[split_names[start_index + j]] = (
+                split_start[0], y_e, split_start[1], z_e, split_start[2], x_e)
 
-                split_data = data[split_start[0] : y_e, split_start[1] : z_e, split_start[2] : x_e]
-                # we cannot save .nii image to hdfs this way.
-                # im = nib.Nifti1Image(split_data, self.affine)
-                
-                t = time()
+            caches = _split_arr(one_round_split_metadata.items(), nThreads)
 
-                write_array_to_file(split_data, split_names[start_index + j], write_offset= self.header_size, hdfs_client=hdfs_client)
-                # Again, we cannot save .nii image to hdfs this way.
-                # nib.save(im, split_names[start_index + j])
-                total_write_time += time() - t
-
+            st1 = time()
+            for thread_round in caches:
+                tds = []
+                # one split's metadata triggers one thread
+                for i in thread_round:
+                    ix = i[1]
+                    split_data = data[ix[0]: ix[1], ix[2]: ix[3], ix[4]: ix[5]]
+                    td = threading.Thread(target=write_array_to_file,
+                                          args=(split_data, i[0], self.header_size, hdfs_client))
+                    td.start()
+                    tds.append(td)
+                    del split_data
+                for t in tds:
+                    t.join()
             start_index = end_index + 1
-        return total_read_time, total_write_time, total_seek_time, total_seek_number                    
+
+            write_time = time() - st1
+            total_write_time += write_time
+            print("writing data takes ", write_time)
+
+        return total_read_time, total_write_time, total_seek_time, total_seek_number
 
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
                               extension="nii", hdfs_client=None, nThreads=1, benchmark=False):
@@ -358,6 +369,8 @@ class ImageUtils:
         :param mem: memory load each round
         :param filename_prefix: each split's prefix filename
         :param extension: extension of each split
+        :param nThreads: number of threads to trigger in each writing process
+        :param hdfs_client: hdfs client
         :return:
         """
         # calculate remainder based on the original image file
@@ -399,7 +412,7 @@ class ImageUtils:
             else Y_size * Z_size * bytes_per_voxel
 
         # get how many voxels per round
-        voxels = mem / bytes_per_voxel
+        voxels = mem // bytes_per_voxel
         next_read_index = (0, voxels - 1)
 
         # Core Loop:
@@ -411,13 +424,13 @@ class ImageUtils:
             to_x_index = index_to_voxel(next_read_index[1] + 1, Y_size, Z_size)[2]
 
             st_read_time = time()
-            print "start reading data to memory..."
+            print("start reading data to memory...")
             data_in_range = self.proxy.dataobj[..., from_x_index: to_x_index]
 
             if benchmark:
                 end_time = time() - st_read_time
                 total_read_time += end_time
-                print "reading data takes ", end_time
+                print("reading data takes ", end_time)
                 total_seek_number += 1
 
             one_round_split_metadata = {}
@@ -473,7 +486,7 @@ class ImageUtils:
             # clear
             del data_in_range
 
-            print "one memory load takes ", time() - st
+            print("one memory load takes ", time() - st)
 
         return total_read_time, total_write_time, total_seek_time, total_seek_number
 
@@ -559,7 +572,7 @@ class ImageUtils:
 
 
             read_time, assign_time = self.insert_elems(data_dict, splits, start_index, end_index, bytes_per_voxel,
-                                                       y_size, z_size, x_size,input_compressed)
+                                                       y_size, z_size, x_size, input_compressed)
 
             seek_time, write_time, num_seeks = write_dict_to_file(data_dict, reconstructed, bytes_per_voxel,
                                                                   self.header_size)
@@ -950,9 +963,9 @@ def generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir
     generate all the splits' name based on the number of splits the user set
     """
     split_names = []
-    for x in range(0, X_size, x_size):
-        for z in range(0, Z_size, z_size):
-            for y in range(0, Y_size, y_size):
+    for x in range(0, int(X_size), int(x_size)):
+        for z in range(0, int(Z_size), int(z_size)):
+            for y in range(0, int(Y_size), int(y_size)):
                 split_names.append(
                     out_dir + '/' + filename_prefix + '_' + str(y) + "_" + str(z) + "_" + str(x) + "." + extension)
     return split_names
@@ -1001,9 +1014,9 @@ def index_to_voxel(index, Y_size, Z_size):
     index to voxel, eg. 0 -> (0,0,0).
     """
     i = index % (Y_size)
-    index = index / (Y_size)
+    index = index // (Y_size)
     j = index % (Z_size)
-    index = index / (Z_size)
+    index = index // (Z_size)
     k = index
     return (i, j, k)
 
@@ -1188,8 +1201,10 @@ def check_in_range(next_index, index_list):
 def write_array_to_file(data_array, to_file, write_offset, hdfs_client=None):
     """
     :param data_array: consists of consistent data that to bo written to the file
+    :param to_file: file path
     :param reconstructed: reconstructed image file to be written
     :param write_offset: file offset to be written
+    :param hdfs_client: HDFS client
     :return: benchmarking params
     """
     write_time = 0
@@ -1212,7 +1227,6 @@ def write_array_to_file(data_array, to_file, write_offset, hdfs_client=None):
         with hdfs_client.write(to_file, append=True) as writer:
             writer.write(data)
         seek_number += 1
-        # hdfs_client.write(to_file, data=data, append=True)
         write_time += time() - write_start
 
     del data_array
@@ -1338,6 +1352,8 @@ def pos_to_int_tuple(pos):
 
 
 def _split_arr(arr, size):
+    # for python3
+    arr = list(arr)
     arrs = []
     while len(arr) > size:
         pice = arr[:size]
