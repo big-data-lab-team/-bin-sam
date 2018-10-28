@@ -3,7 +3,7 @@ import numpy as np
 import subprocess as sp
 import hashlib
 from . import test_helpers as th
-from os import path as op
+from os import path as op, makedirs
 from .. import imageutils as iu
 
 
@@ -12,6 +12,12 @@ exp_fldr = th.get_exp_fldr()
 out_fldr = th.get_out_fldr(strategy)
 exp_recon = op.join(exp_fldr, "test_reconstructed.nii")
 mem=1024**3
+
+try:
+    makedirs(out_fldr)
+except Exception as e:
+    pass
+
 
 def test_clustered_writes():
 

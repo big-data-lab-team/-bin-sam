@@ -3,7 +3,7 @@ import numpy as np
 import subprocess as sp
 import hashlib
 from . import test_helpers as th
-from os import path as op
+from os import path as op, makedirs
 from .. import imageutils as iu
 
 
@@ -13,6 +13,11 @@ def test_naive_splits():
 
     exp_fldr = th.get_exp_fldr()
     out_fldr = th.get_out_fldr(strategy)
+
+    try:
+        makedirs(out_fldr)
+    except Exception as e:
+        print(e)
 
     im = iu.ImageUtils(filepath=op.join(exp_fldr, 
                                         "test_reconstructed.nii"))
