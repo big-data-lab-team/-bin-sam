@@ -14,7 +14,7 @@ install:
 
 script:
     - pycodestyle imageutils.py tests/*.py
-    - pytest ./
+    - pytest --cov=sam ./
 
 after_success:
     - coveralls
