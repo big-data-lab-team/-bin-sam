@@ -50,7 +50,7 @@ img.split_clustered_writes(Y_splits=5, Z_splits=5, X_splits=5,
 ```python
 import imageutils as iu
 import numpy as np
-img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850,
+img = iu.ImageUtils(filepath="/path/to/img.nii", first_dim=3850,
                     second_dim=3025, third_dim=3500, dtype=np.uint16)
 img.reconstruct_img("/path/to/legend", "clustered", mem=0)
 ```
@@ -63,7 +63,7 @@ img.reconstruct_img("/path/to/legend", "clustered", mem=0)
 # mem=12g
 import imageutils as iu
 import numpy as np
-img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850,
+img = iu.ImageUtils(filepath="/path/to/img.nii", first_dim=3850,
                     second_dim=3025, third_dim=3500, dtype=np.uint16)
 img.reconstruct_img("/path/to/legend", "clustered", mem=12*1024**3)
 ```
@@ -73,7 +73,7 @@ img.reconstruct_img("/path/to/legend", "clustered", mem=12*1024**3)
 # mem=12g
 import imageutils as iu
 import numpy as np
-img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850,
+img = iu.ImageUtils(filepath="/path/to/img.nii", first_dim=3850,
                     second_dim=3025, third_dim=3500, dtype=np.uint16)
 img.reconstruct_img("/path/to/legend", "multiple", mem=12*1024**3)
 ```
