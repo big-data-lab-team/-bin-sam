@@ -10,7 +10,7 @@ python:
 
 
 install:
-    - pip install coveralls pytest pycodestyle pyspark nibabel
+    - pip install coveralls pytest pycodestyle nibabel
 
 script:
     - pycodestyle imageutils.py tests/*.py
