@@ -4,7 +4,6 @@ A library to split and merge high-resolution 3D images.
 Currently supports [nii](https://nifti.nimh.nih.gov) format only.
 
 # prerequisites
-- Python 2.7.5
 - Numpy 1.12.1
 - Nibabel
 
