@@ -19,7 +19,7 @@ def test_naive_splits():
     except Exception as e:
         print(e)
 
-    im = iu.ImageUtils(filepath=op.join(exp_fldr, 
+    im = iu.ImageUtils(filepath=op.join(exp_fldr,
                                         "test_reconstructed.nii"))
 
     im.split(first_dim=10, second_dim=10, third_dim=10,

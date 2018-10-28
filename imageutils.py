@@ -912,7 +912,7 @@ class ImageUtils:
         split_im = start_im = Split(split_name)
         split_pos = start_pos = pos_to_int_tuple(start_im.split_pos)
 
-        split_meta_cache[split_name] = split_im 
+        split_meta_cache[split_name] = split_im
 
         remaining_mem -= start_im.split_bytes
 
@@ -978,7 +978,7 @@ class ImageUtils:
         bytes_per_voxel = self.header['bitpix'] / 8
         header_offset = self.header.single_vox_offset
         reconstructed_img_voxels = X_size * Y_size * Z_size
-        
+
         # for now always going to return benchmarks
         # if benchmark:
         total_read_time = 0
@@ -1359,6 +1359,7 @@ class Split:
                                                    self.split_x *
                                                    self.split_z)
         self.proxy = nib.load(split_name)
+
 
 def sort_split_names(legend):
     """

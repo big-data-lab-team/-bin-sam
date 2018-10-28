@@ -11,7 +11,7 @@ strategy = 'clustered'
 exp_fldr = th.get_exp_fldr()
 out_fldr = th.get_out_fldr(strategy)
 exp_recon = op.join(exp_fldr, "test_reconstructed.nii")
-mem=1024**3
+mem = 1024**3
 
 try:
     makedirs(out_fldr)
@@ -27,7 +27,7 @@ def test_clustered_writes():
     im = iu.ImageUtils(filepath=exp_recon)
 
     im.split_clustered_writes(Y_splits=2, Z_splits=2, X_splits=2,
-                              out_dir=out_fldr, mem=mem, 
+                              out_dir=out_fldr, mem=mem,
                               filename_prefix=strategy, extension="nii")
 
     expected_filenames = th.get_list_exp()
@@ -42,35 +42,38 @@ def test_clustered_writes():
                 print(expected_hash, observed_hash)
                 assert expected_hash == observed_hash
 
-def test_clustered_reads():                                                       
-                                                                                 
-    out_recon = op.join(out_fldr, "c_reconstructed.nii")                         
-                                                                                 
-    im = iu.ImageUtils(filepath=out_recon,                                       
-                        first_dim=20, second_dim=20, third_dim=20,               
-                        dtype=np.ushort)                                         
-    im.reconstruct_img(op.join(out_fldr, 'legend.txt'), strategy,                
+
+def test_clustered_reads():
+
+    out_recon = op.join(out_fldr, "c_reconstructed.nii")
+
+    im = iu.ImageUtils(filepath=out_recon,
+                       first_dim=20, second_dim=20, third_dim=20,
+                       dtype=np.ushort)
+    im.reconstruct_img(op.join(out_fldr, 'legend.txt'), strategy,
                        mem=mem)
 
     compare_recon_files(exp_recon, out_recon)
 
+
 def test_clustered_reads_nomem():
 
-    out_recon = op.join(out_fldr, "c_reconstructed_0.nii")                         
-                                                                                 
-    im = iu.ImageUtils(filepath=out_recon,                                       
-                        first_dim=20, second_dim=20, third_dim=20,               
-                        dtype=np.ushort)                                         
-    im.reconstruct_img(op.join(out_fldr, 'legend.txt'), strategy,                
+    out_recon = op.join(out_fldr, "c_reconstructed_0.nii")
+
+    im = iu.ImageUtils(filepath=out_recon,
+                       first_dim=20, second_dim=20, third_dim=20,
+                       dtype=np.ushort)
+    im.reconstruct_img(op.join(out_fldr, 'legend.txt'), strategy,
                        mem=0)
 
     compare_recon_files(exp_recon, out_recon)
 
+
 def compare_recon_files(exp_recon, out_recon):
-    with open(exp_recon, 'rb') as exp_data:                                      
-        with open(out_recon, 'rb') as out_data:                                  
-            expected_hash = hashlib.md5(exp_data.read()).hexdigest()             
-            observed_hash = hashlib.md5(out_data.read()).hexdigest()             
-                                                                                 
-            print(expected_hash, observed_hash)                                  
+    with open(exp_recon, 'rb') as exp_data:
+        with open(out_recon, 'rb') as out_data:
+            expected_hash = hashlib.md5(exp_data.read()).hexdigest()
+            observed_hash = hashlib.md5(out_data.read()).hexdigest()
+
+            print(expected_hash, observed_hash)
             assert expected_hash == observed_hash

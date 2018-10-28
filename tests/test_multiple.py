@@ -11,20 +11,20 @@ strategy = 'multiple'
 exp_fldr = th.get_exp_fldr()
 out_fldr = th.get_out_fldr(strategy)
 exp_recon = op.join(exp_fldr, "test_reconstructed.nii")
-mem=1024**3
+mem = 1024**3
 
 try:
     makedirs(out_fldr)
 except Exception as e:
     pass
 
-def test_multiple_writes():
 
+def test_multiple_writes():
 
     im = iu.ImageUtils(filepath=exp_recon)
 
     im.split_multiple_writes(Y_splits=2, Z_splits=2, X_splits=2,
-                             out_dir=out_fldr, mem=mem, 
+                             out_dir=out_fldr, mem=mem,
                              filename_prefix=strategy, extension="nii")
 
     expected_filenames = th.get_list_exp()
@@ -41,12 +41,12 @@ def test_multiple_writes():
 
 
 def test_multiple_reads():
-    
+
     out_recon = op.join(out_fldr, "m_reconstructed.nii")
 
     im = iu.ImageUtils(filepath=out_recon,
-                        first_dim=20, second_dim=20, third_dim=20,
-                        dtype=np.ushort)
+                       first_dim=20, second_dim=20, third_dim=20,
+                       dtype=np.ushort)
     im.reconstruct_img(op.join(out_fldr, 'legend.txt'), strategy,
                        mem=mem)
 
