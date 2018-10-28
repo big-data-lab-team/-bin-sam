@@ -440,7 +440,7 @@ class ImageUtils:
 
             one_round_split_metadata = {}
 
-            for j in xrange(end_index - start_index + 1):
+            for j in range(0, end_index - start_index + 1):
                 split_start = pos_to_int_tuple(split_ext(split_names
                                                          [start_index + j])
                                                [0].split('_'))
@@ -461,7 +461,7 @@ class ImageUtils:
                 tds = []
                 # one split's metadata triggers one thread
                 for i in thread_round:
-                    ix = i[1]
+                    ix = [int(x) for x in i[1]]
                     split_data = data[ix[0]: ix[1], ix[2]: ix[3], ix[4]: ix[5]]
                     td = threading.Thread(target=write_array_to_file,
                                           args=(split_data, i[0],
@@ -642,8 +642,9 @@ class ImageUtils:
 
             print("one memory load takes ", time() - st)
 
-        return (total_read_time, total_write_time, total_seek_time,
-                total_seek_number)
+        if benchmark:
+            return (total_read_time, total_write_time, total_seek_time,
+                    total_seek_number)
 
     def reconstruct_img(self, legend, merge_func, mem=None,
                         input_compressed=False, benchmark=False):
@@ -825,7 +826,7 @@ class ImageUtils:
             idx_start = 0
 
             st = time()
-            split_data = split_im.split_proxy.get_data()
+            split_data = split_im.proxy.get_data()
             if input_compressed:
                 read_time += time() - st
 
@@ -864,8 +865,8 @@ class ImageUtils:
 
             # split is an incomplete row
             else:
-                for i in xrange(split_im.split_x):
-                    for j in xrange(split_im.split_z):
+                for i in range(0, split_im.split_x):
+                    for j in range(0, split_im.split_z):
                         t = time()
                         data = split_data[:, j, i].tobytes('F')
                         if not input_compressed:
@@ -905,10 +906,13 @@ class ImageUtils:
 
         """
 
+        split_meta_cache = {}
         split_name = splits[start_idx].strip()
 
         split_im = start_im = Split(split_name)
         split_pos = start_pos = pos_to_int_tuple(start_im.split_pos)
+
+        split_meta_cache[split_name] = split_im 
 
         remaining_mem -= start_im.split_bytes
 
@@ -927,6 +931,7 @@ class ImageUtils:
             split_im = Split(split_name)
             split_pos = pos_to_int_tuple(split_im.split_pos)
 
+            split_meta_cache[split_name] = split_im
             remaining_mem -= split_im.split_bytes
 
             if remaining_mem >= 0:
@@ -948,7 +953,8 @@ class ImageUtils:
 
         end_idx, end_pos = adjust_end_read(splits, start_pos, split_pos,
                                            end_pos, start_idx, end_idx,
-                                           split_positions, y_size, z_size)
+                                           split_positions, y_size, z_size,
+                                           split_meta_cache)
         print("Reading from position "
               "{0} (index {1}) -> {2} (index {3})".format(start_pos, start_idx,
                                                           end_pos, end_idx))
@@ -972,12 +978,13 @@ class ImageUtils:
         bytes_per_voxel = self.header['bitpix'] / 8
         header_offset = self.header.single_vox_offset
         reconstructed_img_voxels = X_size * Y_size * Z_size
-
-        if benchmark:
-            total_read_time = 0
-            total_seek_time = 0
-            total_write_time = 0
-            total_seek_number = 0
+        
+        # for now always going to return benchmarks
+        # if benchmark:
+        total_read_time = 0
+        total_seek_time = 0
+        total_write_time = 0
+        total_seek_number = 0
 
         # get how many voxels per round
         voxels = mem / bytes_per_voxel
@@ -985,8 +992,15 @@ class ImageUtils:
 
         # read the headers of all the splits
         # to filter the splits out of the write range
-        split_indexes = get_indexes_of_all_splits(legend, Y_size, Z_size)
         sorted_split_name_list = sort_split_names(legend)
+        split_meta_cache = {}
+
+        for s in sorted_split_name_list:
+            split_meta_cache[s] = Split(s)
+
+        split_indexes = get_indexes_of_all_splits(sorted_split_name_list,
+                                                  split_meta_cache,
+                                                  Y_size, Z_size)
 
         # Core loop
         while True:
@@ -1052,7 +1066,8 @@ class ImageUtils:
             return (total_read_time, total_write_time,
                     total_seek_time, total_seek_number)
         else:
-            return None
+            return (total_read_time, total_write_time,
+                    total_seek_time, total_seek_number)
 
     def load_image(self, filepath, in_hdfs=None):
 
@@ -1343,7 +1358,7 @@ class Split:
         self.split_bytes = self.bytes_per_voxel * (self.split_y *
                                                    self.split_x *
                                                    self.split_z)
-
+        self.proxy = nib.load(split_name)
 
 def sort_split_names(legend):
     """
@@ -1390,7 +1405,7 @@ def extract_rows(split, data_dict, index_list, write_index,
     write_start, write_end = write_index
 
     ts1 = time()
-    split_data = split.split_proxy.get_data()
+    split_data = split.proxy.get_data()
     if benchmark and input_compressed:
         read_time_one_r += time() - ts1
 
@@ -1399,8 +1414,8 @@ def extract_rows(split, data_dict, index_list, write_index,
         index_start = index
         index_end = index + split.split_y
 
-        j = n % (split.split_z)
-        i = n / (split.split_z)
+        j = int(n % (split.split_z))
+        i = int(n / (split.split_z))
 
         if index_start >= write_start and index_end <= write_end:
             st = time()
@@ -1535,7 +1550,7 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
 
     for k in sorted(data_dict.keys()):
 
-        seek_pos = header_offset + k * bytes_per_voxel
+        seek_pos = int(header_offset + k * bytes_per_voxel)
 
         if to_file.tell() != seek_pos:
             # print "seek point:", seek_pos, to_file.tell()
@@ -1571,6 +1586,7 @@ def generate_header(first_dim, second_dim, third_dim, dtype):
         header['dim'][1] = first_dim
         header['dim'][2] = second_dim
         header['dim'][3] = third_dim
+        header.set_sform(np.eye(4))
         header.set_data_dtype(dtype)
 
         return header

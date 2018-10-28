@@ -1,0 +1,16 @@
+tests/test_outputs/naive/naive_0_0_0.nii.gz
+tests/test_outputs/naive/naive_10_0_0.nii.gz
+tests/test_outputs/naive/naive_0_10_0.nii.gz
+tests/test_outputs/naive/naive_10_10_0.nii.gz
+tests/test_outputs/naive/naive_0_0_10.nii.gz
+tests/test_outputs/naive/naive_10_0_10.nii.gz
+tests/test_outputs/naive/naive_0_10_10.nii.gz
+tests/test_outputs/naive/naive_10_10_10.nii.gz
+tests/test_outputs/naive/naive_0_0_0.nii.gz
+tests/test_outputs/naive/naive_10_0_0.nii.gz
+tests/test_outputs/naive/naive_0_10_0.nii.gz
+tests/test_outputs/naive/naive_10_10_0.nii.gz
+tests/test_outputs/naive/naive_0_0_10.nii.gz
+tests/test_outputs/naive/naive_10_0_10.nii.gz
+tests/test_outputs/naive/naive_0_10_10.nii.gz
+tests/test_outputs/naive/naive_10_10_10.nii.gz
