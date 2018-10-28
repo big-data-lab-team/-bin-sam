@@ -16,7 +16,8 @@ Currently supports [nii](https://nifti.nimh.nih.gov) format only.
 ```python
 import imageutils as iu
 img = iu.ImageUtils(filepath="/path/to/image.nii")
-img.split(first_dim=770, second_dim=605, third_dim=700, local_dir="/path/to/output_dir", filename_prefix="bigbrain")
+img.split(first_dim=770, second_dim=605, third_dim=700,
+          local_dir="/path/to/output_dir", filename_prefix="bigbrain")
 ```
 
 
@@ -26,8 +27,9 @@ img.split(first_dim=770, second_dim=605, third_dim=700, local_dir="/path/to/outp
 # mem = 12g
 import imageutils as iu
 img = iu.ImageUtils(filepath="/path/to/image.nii")
-img.split_multiple_writes(Y_splits=5, Z_splits=5, X_splits=5, out_dir="/path/to/output_dir", mem=12*1024**3, filename_prefix="bigbrain",
-                          extension="nii")
+img.split_multiple_writes(Y_splits=5, Z_splits=5, X_splits=5,
+                          out_dir="/path/to/output_dir", mem=12*1024**3,
+                          filename_prefix="bigbrain", extension="nii")
 ```
 
 #### clustered writes strategy
@@ -36,8 +38,9 @@ img.split_multiple_writes(Y_splits=5, Z_splits=5, X_splits=5, out_dir="/path/to/
 # mem = 12g
 import imageutils as iu
 img = iu.ImageUtils(filepath="/path/to/image.nii")
-img.split_clustered_writes(Y_splits=5, Z_splits=5, X_splits=5, out_dir="/path/to/output_dir", mem=12*1024**3, filename_prefix="bigbrain",
-                          extension="nii")
+img.split_clustered_writes(Y_splits=5, Z_splits=5, X_splits=5,
+                           out_dir="/path/to/output_dir", mem=12*1024**3,
+                           filename_prefix="bigbrain", extension="nii")
 ```
 
 ### Merge:
@@ -47,7 +50,8 @@ img.split_clustered_writes(Y_splits=5, Z_splits=5, X_splits=5, out_dir="/path/to
 ```python
 import imageutils as iu
 import numpy as np
-img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850, second_dim=3025, third_dim=3500, dtype=np.uint16)
+img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850,
+                    second_dim=3025, third_dim=3500, dtype=np.uint16)
 img.reconstruct_img("/path/to/legend", "clustered", mem=0)
 ```
 
@@ -59,7 +63,8 @@ img.reconstruct_img("/path/to/legend", "clustered", mem=0)
 # mem=12g
 import imageutils as iu
 import numpy as np
-img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850, second_dim=3025, third_dim=3500, dtype=np.uint16)
+img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850,
+                    second_dim=3025, third_dim=3500, dtype=np.uint16)
 img.reconstruct_img("/path/to/legend", "clustered", mem=12*1024**3)
 ```
 
@@ -68,7 +73,8 @@ img.reconstruct_img("/path/to/legend", "clustered", mem=12*1024**3)
 # mem=12g
 import imageutils as iu
 import numpy as np
-img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850, second_dim=3025, third_dim=3500, dtype=np.uint16)
+img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850,
+                    second_dim=3025, third_dim=3500, dtype=np.uint16)
 img.reconstruct_img("/path/to/legend", "multiple", mem=12*1024**3)
 ```
 
