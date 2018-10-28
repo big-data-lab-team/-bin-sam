@@ -44,8 +44,23 @@ def test_clustered_reads():
                         first_dim=20, second_dim=20, third_dim=20,               
                         dtype=np.ushort)                                         
     im.reconstruct_img(op.join(out_fldr, 'legend.txt'), strategy,                
-                       mem=mem)                                                  
+                       mem=mem)
+
+    compare_recon_files(exp_recon, out_recon)
+
+def test_clustered_reads_nomem():
+
+    out_recon = op.join(out_fldr, "c_reconstructed_0.nii")                         
                                                                                  
+    im = iu.ImageUtils(filepath=out_recon,                                       
+                        first_dim=20, second_dim=20, third_dim=20,               
+                        dtype=np.ushort)                                         
+    im.reconstruct_img(op.join(out_fldr, 'legend.txt'), strategy,                
+                       mem=0)
+
+    compare_recon_files(exp_recon, out_recon)
+
+def compare_recon_files(exp_recon, out_recon):
     with open(exp_recon, 'rb') as exp_data:                                      
         with open(out_recon, 'rb') as out_data:                                  
             expected_hash = hashlib.md5(exp_data.read()).hexdigest()             
