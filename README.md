@@ -1,9 +1,9 @@
-# sam
+# sam [![Build Status](https://travis-ci.org/ValHayot/sam.svg?branch=master)](https://travis-ci.org/ValHayot/sam) [![Coverage Status](https://coveralls.io/repos/github/ValHayot/sam/badge.svg?branch=master)](https://coveralls.io/github/ValHayot/sam?branch=master)
+
 A library to split and merge high-resolution 3D images.
 Currently supports [nii](https://nifti.nimh.nih.gov) format only.
 
 # prerequisites
-- Python 2.7.5
 - Numpy 1.12.1
 - Nibabel
 
@@ -11,10 +11,12 @@ Currently supports [nii](https://nifti.nimh.nih.gov) format only.
 # how to use
 ### Split:
 #### naive split strategy
+*note*: accepts split dimensions rather than number of splits
 ```python
 import imageutils as iu
 img = iu.ImageUtils(filepath="/path/to/image.nii")
-img.split(first_dim=5, second_dim=5, third_dim=5, local_dir="/path/to/output_dir", filename_prefix="bigbrain")
+img.split(first_dim=770, second_dim=605, third_dim=700,
+          local_dir="/path/to/output_dir", filename_prefix="bigbrain")
 ```
 
 
@@ -24,8 +26,20 @@ img.split(first_dim=5, second_dim=5, third_dim=5, local_dir="/path/to/output_dir
 # mem = 12g
 import imageutils as iu
 img = iu.ImageUtils(filepath="/path/to/image.nii")
-img.split_multiple_writes(Y_splits=5, Z_splits=5, X_splits=5, out_dir="/path/to/output_dir", mem=12*1024**3, filename_prefix="bigbrain",
-                          extension="nii")
+img.split_multiple_writes(Y_splits=5, Z_splits=5, X_splits=5,
+                          out_dir="/path/to/output_dir", mem=12*1024**3,
+                          filename_prefix="bigbrain", extension="nii")
+```
+
+#### clustered writes strategy
+
+```python
+# mem = 12g
+import imageutils as iu
+img = iu.ImageUtils(filepath="/path/to/image.nii")
+img.split_clustered_writes(Y_splits=5, Z_splits=5, X_splits=5,
+                           out_dir="/path/to/output_dir", mem=12*1024**3,
+                           filename_prefix="bigbrain", extension="nii")
 ```
 
 ### Merge:
@@ -35,8 +49,9 @@ img.split_multiple_writes(Y_splits=5, Z_splits=5, X_splits=5, out_dir="/path/to/
 ```python
 import imageutils as iu
 import numpy as np
-img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850, second_dim=3025, third_dim=3500, dtype=np.uint16)
-img.reconstruct_img(legend="/path/to/legend", "clustered", mem=0)
+img = iu.ImageUtils(filepath="/path/to/img.nii", first_dim=3850,
+                    second_dim=3025, third_dim=3500, dtype=np.uint16)
+img.reconstruct_img("/path/to/legend", "clustered", mem=0)
 ```
 
 
@@ -47,8 +62,9 @@ img.reconstruct_img(legend="/path/to/legend", "clustered", mem=0)
 # mem=12g
 import imageutils as iu
 import numpy as np
-img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850, second_dim=3025, third_dim=3500, dtype=np.uint16)
-img.reconstruct_img(legend="/path/to/legend", "clustered", mem=12*1024**3)
+img = iu.ImageUtils(filepath="/path/to/img.nii", first_dim=3850,
+                    second_dim=3025, third_dim=3500, dtype=np.uint16)
+img.reconstruct_img("/path/to/legend", "clustered", mem=12*1024**3)
 ```
 
 - multiple reads strategy
@@ -56,8 +72,9 @@ img.reconstruct_img(legend="/path/to/legend", "clustered", mem=12*1024**3)
 # mem=12g
 import imageutils as iu
 import numpy as np
-img = iu.ImageUtils(reconstructed="/path/to/img.nii", first_dim=3850, second_dim=3025, third_dim=3500, dtype=np.uint16)
-img.reconstruct_img(legend="/path/to/legend", "multiple", mem=12*1024**3)
+img = iu.ImageUtils(filepath="/path/to/img.nii", first_dim=3850,
+                    second_dim=3025, third_dim=3500, dtype=np.uint16)
+img.reconstruct_img("/path/to/legend", "multiple", mem=12*1024**3)
 ```
 
 

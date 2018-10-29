@@ -1,0 +1,8 @@
+tests/test_data/testblock_0_0_0.nii
+tests/test_data/testblock_10_0_0.nii
+tests/test_data/testblock_0_10_0.nii
+tests/test_data/testblock_10_10_0.nii
+tests/test_data/testblock_0_0_10.nii
+tests/test_data/testblock_10_0_10.nii
+tests/test_data/testblock_0_10_10.nii
+tests/test_data/testblock_10_10_10.nii
