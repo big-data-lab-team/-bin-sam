@@ -1,4 +1,7 @@
-# sam [![Build Status](https://travis-ci.org/ValHayot/sam.svg?branch=master)](https://travis-ci.org/ValHayot/sam) [![Coverage Status](https://coveralls.io/repos/github/ValHayot/sam/badge.svg?branch=master)](https://coveralls.io/github/ValHayot/sam?branch=master)
+# sam 
+
+[![Build Status](https://travis-ci.org/big-data-lab-team/sam.svg?branch=master)](https://travis-ci.org/big-data-lab-team/sam)
+[![Coverage Status](https://coveralls.io/repos/github/big-data-lab-team/sam/badge.svg?branch=master)](https://coveralls.io/github/big-data-lab-team/sam?branch=master)
 
 A library to split and merge high-resolution 3D images.
 Currently supports [nii](https://nifti.nimh.nih.gov) format only.
