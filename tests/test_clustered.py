@@ -4,7 +4,7 @@ import subprocess as sp
 import hashlib
 from . import test_helpers as th
 from os import path as op, makedirs
-from .. import imageutils as iu
+from sam import imageutils as iu
 
 
 strategy = 'clustered'
