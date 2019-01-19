@@ -10,7 +10,7 @@ python:
 
 
 install:
-    - pip install coveralls pytest pytest-cov pycodestyle nibabel
+    - pip install coveralls pytest=3.6 pytest-cov pycodestyle nibabel
 
 script:
     - pycodestyle sam/imageutils.py tests/*.py
