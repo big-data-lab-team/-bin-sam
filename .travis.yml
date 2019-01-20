@@ -2,7 +2,6 @@ dist: trusty
 language: python
 
 python:
-    - 2.7
     - 3.4
     - 3.5
     - 3.6
@@ -10,10 +9,10 @@ python:
 
 
 install:
-    - pip install coveralls pytest pytest-cov pycodestyle nibabel
+    - pip install coveralls pytest==3.6 pytest-cov pycodestyle nibabel
 
 script:
-    - pycodestyle imageutils.py tests/*.py
+    - pycodestyle sam/imageutils.py tests/*.py
     - pytest --cov=sam ./
 
 after_success:
