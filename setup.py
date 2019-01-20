@@ -25,7 +25,7 @@ setuptools.setup(
     tests_require=["pytest"],
     setup_requires=DEPS,
     install_requires=DEPS,
-    python_requires=">=2.7",
+    python_requires=">=3.4",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
