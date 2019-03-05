@@ -663,6 +663,10 @@ class ImageUtils:
         mem             : the amount of available memory in bytes
         """
 
+
+
+
+
         '''if not self.filepath.endswith('.gz'):
             print("The reconstucted image is going to be uncompressed...")
             reconstructed = open(self.filepath, self.file_access())
@@ -680,7 +684,7 @@ class ImageUtils:
 
         if not self.filepath.endswith('.gz'):
             print("The reconstucted image will not be compressed...")
-            reconstructed = os.open(self.filepath, os.O_WRONLY | os.O_APPEND)
+            reconstructed = os.open(self.filepath, os.O_CREAT | os.O_RDRW | os.O_APPEND)
         else:
             print("The reconstucted image will be compressed...")
             reconstructed = gzip.open(self.filepath, self.file_access())
