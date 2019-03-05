@@ -1534,7 +1534,7 @@ def write_array_to_file(data_array, to_file, write_offset, hdfs_client=None):
     data = data_array.tobytes('F')
     if hdfs_client is None:
         seek_start = time()
-        '''with open(to_file, 'a+b') as f:
+        with open(to_file, 'a+b') as f:
             f.seek(write_offset, 0)
             seek_number += 1
             seek_time += time() - seek_start
@@ -1542,13 +1542,13 @@ def write_array_to_file(data_array, to_file, write_offset, hdfs_client=None):
             f.write(data)
             f.flush()
             os.fsync(f)
-            write_time += time() - write_start'''
+            write_time += time() - write_start
 
-        fd=os.open(to_file, os.O_RDWR | os.O_APPEND)
+        '''fd=os.open(to_file, os.O_RDWR | os.O_APPEND)
         write_start = time()
         os.pwrite(fd, data, write_offset)
         write_time += time() - write_start
-        os.close(fd)
+        os.close(fd)'''
     else:
         write_start = time()
         with hdfs_client.write(to_file, append=True) as writer:
