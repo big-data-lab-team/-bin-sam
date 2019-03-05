@@ -678,7 +678,7 @@ class ImageUtils:
 
         if not self.filepath.endswith('.gz'):
             print("The reconstucted image is going to be uncompressed...")
-            reconstructed = open(self.filepath, self.file_access())
+            reconstructed = open(self.filepath, 'a+b' '''self.file_access()''')
         else:
             print("The reconstucted image is going to be compressed...")
             reconstructed = gzip.open(self.filepath, self.file_access())
