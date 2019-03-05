@@ -662,19 +662,6 @@ class ImageUtils:
                           reading slices and writing slices
         mem             : the amount of available memory in bytes
         """
-        #modified (added at beginning instead of end)
-        '''if not self.filepath.endswith('.gz') and self.proxy is None:
-            with open(self.filepath, "w+b") as f:
-                self.header.write_to(f)'''
-
-
-        #modified
-        '''if not self.filepath.endswith('.gz'):
-            print("The reconstucted image will not be compressed...")
-            reconstructed = os.open(self.filepath, os.O_RDWR | os.O_CREAT | os.O_APPEND)
-        else:
-            print("The reconstucted image will be compressed...")
-            reconstructed = gzip.open(self.filepath, self.file_access())'''
 
         if not self.filepath.endswith('.gz'):
             print("The reconstucted image is going to be uncompressed...")
@@ -696,14 +683,6 @@ class ImageUtils:
                                      input_compressed, benchmark)
 
         reconstructed.close()
-
-        '''#modified
-        if not self.filepath.endswith('.gz'):
-            os.close(reconstructed)
-        else:
-            reconstructed.close()'''
-
-
 
         return (total_read_time, total_write_time,
                 total_seek_time, total_seek_number)
@@ -1536,15 +1515,6 @@ def write_array_to_file(data_array, to_file, write_offset, hdfs_client=None):
     data = data_array.tobytes('F')
     if hdfs_client is None:
         seek_start = time()
-        '''with open(to_file, 'a+b') as f:
-            f.seek(write_offset, 0)
-            seek_number += 1
-            seek_time += time() - seek_start
-            write_start = time()
-            f.write(data)
-            f.flush()
-            os.fsync(f)
-            write_time += time() - write_start'''
 
         fd=os.open(to_file, os.O_RDWR | os.O_APPEND)
         write_start = time()
@@ -1574,24 +1544,13 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
     seek_time = 0
     write_time = 0
     seek_number = 0
-
     no_seek = 0
 
     for k in sorted(data_dict.keys()):
 
         seek_pos = int(header_offset + k * bytes_per_voxel)
-
-        '''if to_file.tell() != seek_pos:
-            # print "seek point:", seek_pos, to_file.tell()
-            seek_start = time()
-            to_file.seek(seek_pos, 0)
-            seek_number += 1
-            seek_time += time() - seek_start'''
-
         data_bytes = data_dict[k]
-
         write_start = time()
-        #to_file.write(data_bytes)
         os.pwrite(to_file.fileno(), data_bytes, seek_pos)
         write_time += time() - write_start
         del data_dict[k]

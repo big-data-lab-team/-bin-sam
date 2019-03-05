@@ -1,4 +1,4 @@
-# sam 
+# sam
 
 [![Build Status](https://travis-ci.org/big-data-lab-team/sam.svg?branch=master)](https://travis-ci.org/big-data-lab-team/sam)
 [![Coverage Status](https://coveralls.io/repos/github/big-data-lab-team/sam/badge.svg?branch=master)](https://coveralls.io/github/big-data-lab-team/sam?branch=master)
@@ -54,7 +54,7 @@ import imageutils as iu
 import numpy as np
 img = iu.ImageUtils(filepath="/path/to/img.nii", first_dim=3850,
                     second_dim=3025, third_dim=3500, dtype=np.uint16)
-img.reconstruct_img("/path/to/legend", "clustered", mem=0)
+img.merge("/path/to/legend", "clustered", mem=0)
 ```
 
 
@@ -67,7 +67,7 @@ import imageutils as iu
 import numpy as np
 img = iu.ImageUtils(filepath="/path/to/img.nii", first_dim=3850,
                     second_dim=3025, third_dim=3500, dtype=np.uint16)
-img.reconstruct_img("/path/to/legend", "clustered", mem=12*1024**3)
+img.merge("/path/to/legend", "clustered", mem=12*1024**3)
 ```
 
 - multiple reads strategy
@@ -77,7 +77,7 @@ import imageutils as iu
 import numpy as np
 img = iu.ImageUtils(filepath="/path/to/img.nii", first_dim=3850,
                     second_dim=3025, third_dim=3500, dtype=np.uint16)
-img.reconstruct_img("/path/to/legend", "multiple", mem=12*1024**3)
+img.merge("/path/to/legend", "multiple", mem=12*1024**3)
 ```
 
 
@@ -85,4 +85,3 @@ img.reconstruct_img("/path/to/legend", "multiple", mem=12*1024**3)
 
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
-
