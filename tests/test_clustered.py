@@ -5,7 +5,7 @@ import hashlib
 import test_helpers as th
 from os import path as op, makedirs
 from sam import imageutils as iu
-import nibabel as nib
+
 
 strategy = 'clustered'
 data_folder = th.get_data_folder()
@@ -53,7 +53,7 @@ def test_clustered_reads():
     im.merge(op.join(out_folder, 'legend.txt'), strategy,
                        mem=mem)
 
-    compare_recon_files(exp_recon, out_recon)
+    th.assert_img_content(exp_recon, out_recon)
 
 
 def test_clustered_reads_nomem():
@@ -66,17 +66,4 @@ def test_clustered_reads_nomem():
     im.merge(op.join(out_folder, 'legend.txt'), strategy,
                        mem=0)
 
-    compare_recon_files(exp_recon, out_recon)
-
-def compare_recon_files(exp_recon, out_recon):
-    img1=nib.load(exp_recon).get_fdata()
-    img2=nib.load(out_recon).get_fdata()
-    assert img1.shape==img2.shape
-    assert (img1==img2).all()
-    '''with open(exp_recon, 'rb') as exp_data:
-        with open(out_recon, 'rb') as out_data:
-            expected_hash = hashlib.md5(exp_data.read()).hexdigest()
-            observed_hash = hashlib.md5(out_data.read()).hexdigest()
-
-            print(expected_hash, observed_hash)
-            assert expected_hash == observed_hash'''
+    th.assert_img_content(exp_recon, out_recon)
