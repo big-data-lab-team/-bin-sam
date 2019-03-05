@@ -17,8 +17,7 @@ install:
     - pip install coveralls pytest==3.6 pytest-cov pycodestyle nibabel
 
 script:
-    - pycodestyle sam/imageutils.py tests/*.py
-    - pytest --cov=sam ./
+    - python -m pytest
 
 after_success:
     - coveralls
