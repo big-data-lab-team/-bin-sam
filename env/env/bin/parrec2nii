@@ -1,0 +1,9 @@
+#!/run/media/user/HDD 1TB/workspace/bigdataneurolab/test_sam_old/sam/env/env/bin/python3
+"""PAR/REC to NIfTI converter
+"""
+
+from nibabel.cmdline.parrec2nii import main
+
+
+if __name__ == '__main__':
+    main()
