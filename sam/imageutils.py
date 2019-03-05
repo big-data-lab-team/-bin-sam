@@ -703,6 +703,11 @@ class ImageUtils:
         else:
             reconstructed.close()
 
+        if not self.filepath.endswith('.gz') and self.proxy is None:
+            with open(self.filepath, "w+b") as f:
+                self.header.write_to(f)
+                f.close()
+
         return (total_read_time, total_write_time,
                 total_seek_time, total_seek_number)
 
