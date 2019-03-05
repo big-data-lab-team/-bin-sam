@@ -663,9 +663,9 @@ class ImageUtils:
         mem             : the amount of available memory in bytes
         """
         #modified (added at beginning instead of end)
-        if not self.filepath.endswith('.gz') and self.proxy is None:
+        '''if not self.filepath.endswith('.gz') and self.proxy is None:
             with open(self.filepath, "w+b") as f:
-                self.header.write_to(f)
+                self.header.write_to(f)'''
 
 
         '''#modified
@@ -683,8 +683,8 @@ class ImageUtils:
             print("The reconstucted image is going to be compressed...")
             reconstructed = gzip.open(self.filepath, self.file_access())
 
-        '''if self.proxy is None:
-            self.header.write_to(reconstructed)'''
+        if self.proxy is None:
+            self.header.write_to(reconstructed)
 
         m_type = Merge[merge_func]
         if input_compressed:
