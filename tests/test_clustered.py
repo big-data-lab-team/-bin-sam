@@ -68,16 +68,15 @@ def test_clustered_reads_nomem():
 
     compare_recon_files(exp_recon, out_recon)
 
-
 def compare_recon_files(exp_recon, out_recon):
-    '''img1=nib.load(exp_recon).get_fdata()
+    img1=nib.load(exp_recon).get_fdata()
     img2=nib.load(out_recon).get_fdata()
     assert img1.shape==img2.shape
-    assert (img1==img2).all()'''
-    with open(exp_recon, 'rb') as exp_data:
+    assert (img1==img2).all()
+    '''with open(exp_recon, 'rb') as exp_data:
         with open(out_recon, 'rb') as out_data:
             expected_hash = hashlib.md5(exp_data.read()).hexdigest()
             observed_hash = hashlib.md5(out_data.read()).hexdigest()
 
             print(expected_hash, observed_hash)
-            assert expected_hash == observed_hash
+            assert expected_hash == observed_hash'''

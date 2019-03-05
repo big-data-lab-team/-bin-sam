@@ -663,9 +663,9 @@ class ImageUtils:
         mem             : the amount of available memory in bytes
         """
         #modified (added at beginning instead of end)
-        if not self.filepath.endswith('.gz') and self.proxy is None:
+        '''if not self.filepath.endswith('.gz') and self.proxy is None:
             with open(self.filepath, "w+b") as f:
-                self.header.write_to(f)
+                self.header.write_to(f)'''
 
 
         #modified
