@@ -66,7 +66,7 @@ class ImageUtils:
         }
 
     def split(self, first_dim, second_dim, third_dim, local_dir,
-              filename_prefix, hdfs_dir=None, copy_to_hdfs=False):
+              filename_prefix, hdfs_dir=None, copy_to_hdfs=False, benchmark=False):
 
         """Splits the 3d-image into shapes of given dimensions
 
@@ -94,6 +94,11 @@ class ImageUtils:
         except AttributeError as aerr:
             print('AttributeError: ', aerr)
             sys.exit(1)
+
+        total_read_time=0
+        total_write_time=0
+        split_seek_time=0
+        split_seek_number=0
 
         num_x_iters = int(ceil(self.proxy.dataobj.shape[2] / third_dim))
         num_z_iters = int(ceil(self.proxy.dataobj.shape[1] / second_dim))
@@ -185,6 +190,12 @@ class ImageUtils:
                     is_rem_z = False
 
             is_rem_y = False
+
+        if benchmark:
+            return {'split_read_time':total_read_time, 'split_write_time':total_write_time, 'split_seek_time':split_seek_time,
+                'split_nb_seeks':split_seek_number}
+        else:
+            return
 
     def load_split(self, split_name, y_size, z_size, x_size, overlaps=0,
                    padding=False):
@@ -318,7 +329,7 @@ class ImageUtils:
 
     def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir,
                                mem, filename_prefix="bigbrain",
-                               extension="nii", nThreads=1, hdfs_client=None):
+                               extension="nii", nThreads=1, hdfs_client=None, benchmark=False):
         """
         Split the input image into several splits, all share with the same
         shape
@@ -477,8 +488,11 @@ class ImageUtils:
             total_write_time += write_time
             print("writing data takes ", write_time)
 
-        return (total_read_time, total_write_time, total_seek_time,
-                total_seek_number)
+        if benchmark:
+            return {'split_read_time':total_read_time, 'split_write_time':total_write_time, 'split_seek_time':split_seek_time,
+                'split_nb_seeks':split_seek_number}
+        else:
+            return
 
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem,
                               filename_prefix="bigbrain", extension="nii",
@@ -643,8 +657,10 @@ class ImageUtils:
             print("one memory load takes ", time() - st)
 
         if benchmark:
-            return (total_read_time, total_write_time, total_seek_time,
-                    total_seek_number)
+            return {'split_read_time':total_read_time, 'split_write_time':total_write_time, 'split_seek_time':split_seek_time,
+                    'split_nb_seeks':split_seek_number}
+        else:
+            return
 
     def merge(self, legend, merge_func, mem=None,
                         input_compressed=False, benchmark=False):
@@ -677,15 +693,16 @@ class ImageUtils:
         if input_compressed:
             print("The input splits are compressed..")
 
-        (total_read_time, total_write_time,
-         total_seek_time, total_seek_number) = \
+        if benchmark:
+            perf_dict = self.merge_types[m_type](reconstructed, legend, mem,
+                                     input_compressed, benchmark)
+            reconstructed.close()
+            return perf_dict
+        else:
             self.merge_types[m_type](reconstructed, legend, mem,
                                      input_compressed, benchmark)
-
-        reconstructed.close()
-
-        return (total_read_time, total_write_time,
-                total_seek_time, total_seek_number)
+            reconstructed.close()
+            return
 
     # TODO:make it work with HDFS
     def clustered_read(self, reconstructed, legend, mem,
@@ -782,7 +799,11 @@ class ImageUtils:
         print("Total number of seeks: ", total_num_seeks)
         print("Total time spent writing: ", total_write)
 
-        return total_read, total_write, total_seek, total_num_seeks
+        if benchmark:
+            return {'merge_read_time':total_read, 'merge_write_time':total_write, 'merge_seek_time':total_seek,
+                'merge_nb_seeks':total_num_seeks}
+        else:
+            return
 
     def insert_elems(self, data_dict, splits, start_index, end_index,
                      bytes_per_voxel, y_size, z_size, x_size,
@@ -1064,11 +1085,10 @@ class ImageUtils:
         if benchmark:
             print(total_read_time, total_write_time,
                   total_seek_time, total_seek_number)
-            return (total_read_time, total_write_time,
-                    total_seek_time, total_seek_number)
+            return {'merge_read_time':total_read_time, 'merge_write_time':total_write_time, 'merge_seek_time':total_seek_time,
+                    'merge_nb_seeks':total_seek_number}
         else:
-            return (total_read_time, total_write_time,
-                    total_seek_time, total_seek_number)
+            return
 
     def load_image(self, filepath, in_hdfs=None):
 
