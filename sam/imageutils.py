@@ -994,7 +994,11 @@ class ImageUtils:
                               of the image
         """
 
-        # image is located in local filesystem
+        if not os.path.isfile(filepath):
+            logging.warn("File does not exist. "
+                         "Will only be able to reconstruct image...")
+            return None
+
         try:
             return nib.load(filepath)
         except Exception as e:
