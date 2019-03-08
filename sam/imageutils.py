@@ -89,6 +89,7 @@ class ImageUtils:
             print('AttributeError: ', aerr)
             sys.exit(1)
 
+        #for benchmark, if benchmark==true
         total_read_time=0
         total_write_time=0
         split_seek_time=0
@@ -131,10 +132,15 @@ class ImageUtils:
                     y_start = y * first_dim
                     y_end = (y + 1) * first_dim
 
+                    if benchmark:
+                        t=time()
                     split_array = self.proxy.dataobj[y_start:y_end,
                                                      z_start:z_end,
                                                      x_start:x_end]
                     split_image = nib.Nifti1Image(split_array, self.affine)
+
+                    if benchmark:
+                        total_read_time+=time()-t
 
                     imagepath = None
 
@@ -171,14 +177,19 @@ class ImageUtils:
                                                        z_start,
                                                        x_start)
 
+                    if benchmark:
+                        t=time()
+
                     nib.save(split_image, imagepath)
+
+                    if benchmark:
+                        total_write_time+=time()-t
 
                     legend_path = '{0}/legend.txt'.format(local_dir)
                     with open(legend_path, 'a+') as im_legend:
                         im_legend.write('{0}\n'.format(imagepath))
 
                     is_rem_z = False
-
             is_rem_y = False
 
         if benchmark:
