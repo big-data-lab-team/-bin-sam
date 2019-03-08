@@ -18,74 +18,68 @@ class Merge(Enum):
 
 
 class ImageUtils:
-    """ Helper utility class for performing operations on images"""
+    """ Core utility class for performing operations on images."""
 
     def __init__(self, filepath, first_dim=None, second_dim=None,
-                 third_dim=None, dtype=None, utils=None):
-        # TODO: Review. not sure about these instance variables...
-
+                 third_dim=None, dtype=None):
         """
         Keyword arguments:
-        filepath                                : filepath to image
-        first_dim, second_dim, third_dim        : the shape of the image. Only
-                                                  required if image needs to be
-                                                  generated
-        dtype                                   : the numpy dtype of the image.
-                                                  Only required if image needs
-                                                  to be generated
-        utils                                   : instance of HDFSUtils.
-                                                  necessary if files are
-                                                  located in HDFS
+            filepath                                : filepath to image
+            first_dim, second_dim, third_dim        : the shape of the image. Only
+                                                      required if image needs to be
+                                                      generated
+            dtype                                   : the numpy dtype of the image.
+                                                      Only required if image needs
+                                                      to be generated
         """
 
-        self.utils = utils
+        #load image
         self.filepath = filepath
-        print(filepath)
-
         self.proxy = self.load_image(filepath)
         self.extension = split_ext(filepath)[1]
-        self.header = None
 
+        #get header
         if self.proxy:
             self.header = self.proxy.header
-        else:
+            if dtype is not None:
+                self.dtype = dtype
+            else:
+                self.dtype = self.header['datatype']
+        elif first_dim and second_dim and third_dim and dtype:
             self.header = generate_header(first_dim, second_dim,
                                           third_dim, dtype)
-
-        if dtype is not None:
             self.dtype = dtype
         else:
-            self.dtype = self.header['datatype']
+            raise ValueError('Cannot generate a header (probably missing some argument).')
 
         self.affine = self.header.get_best_affine()
         self.header_size = self.header.single_vox_offset
 
+        #define merging functions
         self.merge_types = {
             Merge.clustered: self.clustered_read,
             Merge.multiple: self.multiple_reads
         }
 
     def split(self, first_dim, second_dim, third_dim, local_dir,
-              filename_prefix, hdfs_dir=None, copy_to_hdfs=False, benchmark=False):
+              filename_prefix, hdfs_dir=None, benchmark=False):
 
-        """Splits the 3d-image into shapes of given dimensions
+        """Naive strategy. Splits the 3d-image into shapes of given dimensions.
 
         Keyword arguments:
-        first_dim, second_dim, third_dim: the desired first, second and third
-                                          dimensions of the splits,
-                                          respectively.
-        local_dir                       : the path to the local directory in
-                                          which the images will be saved
-        filename_prefix                 : the filename prefix
-        hdfs_dir                        : the hdfs directory name should the
-                                          image be copied to hdfs. If none is
-                                          provided and copy_to_hdfs is set to
-                                          True, the images will be copied to
-                                          the HDFSUtils class' default folder
-        copy_to_hdfs                    : boolean value indicating if the split
-                                          images should be copied to HDFS.
-                                          Default is False.
-
+            first_dim, second_dim, third_dim: the desired first, second and third
+                                              dimensions of the splits,
+                                              respectively.
+            local_dir                       : the path to the local directory in
+                                              which the images will be saved
+            filename_prefix                 : the filename prefix
+            hdfs_dir                        : the hdfs directory name should the
+                                              image be copied to hdfs. If none is
+                                              provided and copy_to_hdfs is set to
+                                              True, the images will be copied to
+                                              the HDFSUtils class' default folder
+            benchmark                       : If set to true the function will return
+                                              a dictionary containing benchmark information.
         """
         try:
             if self.proxy is None:
@@ -179,13 +173,9 @@ class ImageUtils:
 
                     nib.save(split_image, imagepath)
 
-                    if copy_to_hdfs:
-                        self.utils.copy_to_hdfs(imagepath, ovrwrt=True,
-                                                save_path_to_file=True)
-                    else:
-                        legend_path = '{0}/legend.txt'.format(local_dir)
-                        with open(legend_path, 'a+') as im_legend:
-                            im_legend.write('{0}\n'.format(imagepath))
+                    legend_path = '{0}/legend.txt'.format(local_dir)
+                    with open(legend_path, 'a+') as im_legend:
+                        im_legend.write('{0}\n'.format(imagepath))
 
                     is_rem_z = False
 
@@ -197,63 +187,7 @@ class ImageUtils:
         else:
             return
 
-    def load_split(self, split_name, y_size, z_size, x_size, overlaps=0,
-                   padding=False):
 
-        start_pos = pos_to_int_tuple(split_ext(split_name)[0].split('_'))
-
-        Y_size, Z_size, X_size = self.header.get_data_shape()
-
-        start_y = start_pos[0] - overlaps if start_pos[0] - overlaps > 0 else 0
-        end_y = (start_pos[0] + y_size + overlaps
-                 if start_pos[0] + y_size + overlaps < Y_size
-                 else Y_size)
-
-        start_z = start_pos[1] - overlaps if start_pos[1] - overlaps > 0 else 0
-        end_z = (start_pos[1] + z_size + overlaps
-                 if start_pos[1] + z_size + overlaps < Z_size
-                 else Z_size)
-
-        start_x = start_pos[2] - overlaps if start_pos[2] - overlaps > 0 else 0
-        end_x = (start_pos[2] + x_size + overlaps
-                 if start_pos[2] + x_size + overlaps < X_size
-                 else X_size)
-
-        data = self.proxy.dataobj[start_y:end_y, start_z:end_z, start_x:end_x]
-
-        amount_pad = None
-        if padding:
-            amount_pad = ((overlaps if start_pos[0] == 0 else 0,
-                           overlaps if start_pos[0] + y_size == Y_size else 0),
-                          (overlaps if start_pos[1] == 0 else 0,
-                           overlaps if start_pos[1] + z_size == Z_size else 0),
-                          (overlaps if start_pos[2] == 0 else 0,
-                           overlaps if start_pos[2] + x_size == X_size else 0))
-            data = np.lib.pad(data, amount_pad, 'constant')
-
-        if amount_pad is not None:
-            overlap_y = (start_pos[0] - start_y
-                         if amount_pad[0][0] == 0 else amount_pad[0][0],
-                         end_y - start_pos[0] - y_size
-                         if amount_pad[0][1] == 0 else amount_pad[0][1])
-            overlap_z = (start_pos[1] - start_z
-                         if amount_pad[1][0] == 0 else amount_pad[1][0],
-                         end_z - start_pos[1] - z_size
-                         if amount_pad[1][1] == 0 else amount_pad[1][1])
-            overlap_x = (start_pos[2] - start_x
-                         if amount_pad[2][0] == 0 else amount_pad[2][0],
-                         end_x - start_pos[2] - x_size
-                         if amount_pad[2][1] == 0 else amount_pad[2][1])
-
-        else:
-            overlap_y = (start_pos[0] - start_y, end_y - start_pos[0] - y_size)
-            overlap_z = (start_pos[1] - start_z, end_z - start_pos[1] - z_size)
-            overlap_x = (start_pos[2] - start_x, end_x - start_pos[2] - x_size)
-
-        return (split_name,
-                ((overlap_y, overlap_z, overlap_x),
-                 (y_size, z_size, x_size),
-                 data))
 
     def strip_overlap(self, split_fn, split_data):
 
@@ -276,56 +210,7 @@ class ImageUtils:
 
         return (split_fn, (0, (y_size, z_size, x_size), data))
 
-    def save_split(self, split_fn, split_data):
 
-        if split_data[0] != 0:
-            # For now, as the the overlap information should be included in the
-            # header, but is not
-            # Once information is contained within header, saving splits with
-            # overlaps will be possible
-            split_fn, split_data = self.strip_overlap(split_fn, split_data)
-
-        im = nib.Nifti1Image(split_data[2], self.affine)
-        nib.save(im, split_fn)
-
-        return (split_fn, "SUCCESS")
-
-    def create_split_RDD(self, sc, Y_splits, Z_splits, X_splits,
-                         filename_prefix="bigbrain", extension="nii",
-                         output_dir=None, partitions=None, overlaps=0,
-                         padding=False):
-
-        if output_dir is None:
-            output_dir = os.get_cwd()
-
-        # calculate remainder based on the original image file
-        Y_size, Z_size, X_size = self.header.get_data_shape()
-        original_img_voxels = X_size * Y_size * Z_size
-
-        if (X_size % X_splits != 0
-                or Z_size % Z_splits != 0
-                or Y_size % Y_splits != 0):
-
-            raise Exception("There is remainder after splitting, "
-                            "please reset the y,z,x splits")
-        x_size = X_size / X_splits
-        z_size = Z_size / Z_splits
-        y_size = Y_size / Y_splits
-
-        # get all split_names and write them to the legend file
-        split_names = generate_splits_name(y_size, z_size, x_size, Y_size,
-                                           Z_size, X_size, output_dir,
-                                           filename_prefix, extension)
-
-        generate_legend_file(split_names, "legend.txt", output_dir)
-
-        if partitions is None:
-            return sc.parallelize(split_names) \
-                     .map(lambda x: self.load_split(x, y_size, z_size, x_size,
-                                                    overlaps, padding))
-        return sc.parallelize(split_names, partitions) \
-                 .map(lambda x: self.load_split(x, y_size, z_size, x_size,
-                                                overlaps, padding))
 
     def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir,
                                mem, filename_prefix="bigbrain",
@@ -1094,53 +979,9 @@ class ImageUtils:
 
         """Load image into nibabel
         Keyword arguments:
-        filepath            : The absolute, relative path,
-                              or HDFS URL of the image
-                              **Note: If in_hdfs parameter is not set and file
-                                      is located in HDFS, it is necessary that
-                                      the path provided is an HDFS URL or an
-                                      absolute/relative path with the
-                                      '_HDFSUTILS_FLAG_' flag as prefix, or
-                                      else it will conclude that file is
-                                      located in local filesystem.
-        in_hdfs             : boolean variable indicating if image is located
-                              in HDFS or local filesystem. By default is
-                              set to None. If not set (i.e. None), the function
-                              will attempt to determine where the file is
-                              located.
+        filepath            : The absolute or relative path
+                              of the image
         """
-
-        if self.utils is None:
-            in_hdfs = False
-        elif in_hdfs is None:
-            in_hdfs = self.utils.is_hdfs_uri(filepath)
-
-        if in_hdfs:
-            fh = None
-            # gets hdfs path in the case an hdfs uri was provided
-            filepath = self.utils.hdfs_path(filepath)
-
-            with self.utils.client.read(filepath) as reader:
-                stream = reader.read()
-                if self.is_gzipped(filepath, stream[:2]):
-                    fh = nib.FileHolder(
-                            fileobj=GzipFile(fileobj=BytesIO(stream)))
-                else:
-                    fh = nib.FileHolder(fileobj=BytesIO(stream))
-
-                if is_nifti(filepath):
-                    return nib.Nifti1Image.from_file_map({'header': fh,
-                                                          'image': fh})
-                if is_minc(filepath):
-                    return nib.Minc1Image.from_file_map({'header': fh,
-                                                         'image': fh})
-                else:
-                    print('ERROR: currently unsupported file-format')
-                    sys.exit(1)
-        elif not os.path.isfile(filepath):
-            logging.warn("File does not exist in HDFS nor in Local FS. "
-                         "Will only be able to reconstruct image...")
-            return None
 
         # image is located in local filesystem
         try:
