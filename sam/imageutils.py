@@ -10,6 +10,7 @@ import logging
 from enum import Enum
 import gzip
 import threading
+from nibabel import fileslice
 
 
 class Merge(Enum):
@@ -61,8 +62,20 @@ class ImageUtils:
             Merge.multiple: self.multiple_reads
         }
 
+    def naive_nb_seeks(self, sliceobj, shape, dtype, offset, order, lock):
+        ''' Copies the processing of nibabel to count the number of seeks.
+        '''
+        if fileslice.is_fancy(sliceobj):
+            raise ValueError("Cannot handle fancy indexing")
+        dtype = np.dtype(dtype)
+        itemsize = int(dtype.itemsize)
+        segments, sliced_shape, post_slicers = fileslice.calc_slicedefs(
+            sliceobj, shape, itemsize, offset, order)
+        print(len(segments))
+        return len(segments)
+
     def split(self, first_dim, second_dim, third_dim, local_dir,
-              filename_prefix, hdfs_dir=None, benchmark=False):
+              filename_prefix, benchmark=False):
 
         """Naive strategy. Splits the 3d-image into shapes of given dimensions.
 
@@ -73,11 +86,6 @@ class ImageUtils:
             local_dir                       : the path to the local directory in
                                               which the images will be saved
             filename_prefix                 : the filename prefix
-            hdfs_dir                        : the hdfs directory name should the
-                                              image be copied to hdfs. If none is
-                                              provided and copy_to_hdfs is set to
-                                              True, the images will be copied to
-                                              the HDFSUtils class' default folder
             benchmark                       : If set to true the function will return
                                               a dictionary containing benchmark information.
         """
@@ -90,8 +98,8 @@ class ImageUtils:
             sys.exit(1)
 
         #for benchmark, if benchmark==true
-        total_read_time=0
-        total_write_time=0
+        split_read_time=0
+        split_write_time=0
         split_seek_time=0
         split_seek_number=0
 
@@ -132,16 +140,23 @@ class ImageUtils:
                     y_start = y * first_dim
                     y_end = (y + 1) * first_dim
 
+                    #use of naive_nb_seeks to get an estimate number of seeks during the reading phase
+                    dataobj=self.proxy.dataobj
+                    sliceobj = (slice(y_start,y_end),
+                               slice(z_start,z_end),
+                               slice(x_start,x_end))
+                    split_seek_number += self.naive_nb_seeks(sliceobj, dataobj.shape, dataobj.dtype, dataobj.offset, 'C', None)
+
+                    #1 seek per segment
                     if benchmark:
                         t=time()
                     split_array = self.proxy.dataobj[y_start:y_end,
                                                      z_start:z_end,
                                                      x_start:x_end]
-                    split_image = nib.Nifti1Image(split_array, self.affine)
-
                     if benchmark:
                         total_read_time+=time()-t
 
+                    split_image = nib.Nifti1Image(split_array, self.affine)
                     imagepath = None
 
                     # TODO: fix this so that position saved in image and not
@@ -179,15 +194,18 @@ class ImageUtils:
 
                     if benchmark:
                         t=time()
-
                     nib.save(split_image, imagepath)
-
                     if benchmark:
                         total_write_time+=time()-t
 
                     legend_path = '{0}/legend.txt'.format(local_dir)
+
+                    if benchmark:
+                        t=time()
                     with open(legend_path, 'a+') as im_legend:
                         im_legend.write('{0}\n'.format(imagepath))
+                    if benchmark:
+                        total_write_time+=time()-t
 
                     is_rem_z = False
             is_rem_y = False
@@ -225,7 +243,7 @@ class ImageUtils:
 
     def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir,
                                mem, filename_prefix="bigbrain",
-                               extension="nii", nThreads=1, hdfs_client=None, benchmark=False):
+                               extension="nii", nThreads=1, benchmark=False):
         """
         Split the input image into several splits, all share with the same
         shape
@@ -239,7 +257,8 @@ class ImageUtils:
         :param filename_prefix: each split's prefix filename
         :param extension: extension of each split
         :param nThreads: number of threads to trigger in each writing process
-        :param hdfs_client: hdfs client
+        :param benchmark: If set to true the function will return
+                                          a dictionary containing benchmark information.
         :return:
         """
 
@@ -266,16 +285,14 @@ class ImageUtils:
         split_names = generate_splits_name(y_size, z_size, x_size, Y_size,
                                            Z_size, X_size, out_dir,
                                            filename_prefix, extension)
-        legend_file = generate_legend_file(split_names, "legend.txt", out_dir,
-                                           hdfs_client=hdfs_client)
+        legend_file = generate_legend_file(split_names, "legend.txt", out_dir)
 
         # in order to reduce overhead when reading headers of splits from hdfs,
         # create a header cache in the local environment
         split_meta_cache = generate_headers_of_splits(split_names, y_size,
                                                       z_size, x_size,
                                                       self.header
-                                                      .get_data_dtype(),
-                                                      hdfs_client=hdfs_client)
+                                                      .get_data_dtype())
 
         start_index = end_index = 0
 
@@ -333,17 +350,19 @@ class ImageUtils:
             else:
                 total_seek_number += 1
 
-            t = time()
             data = None
 
             if (end_pos[0] - start_pos[0] == Y_size
                     and end_pos[1] - start_pos[1] == Z_size):
+                t = time()
                 data = self.proxy.dataobj[..., start_pos[2]:end_pos[2]]
+                total_read_time += time() - t
             else:
+                t = time()
                 data = self.proxy.dataobj[start_pos[0]:end_pos[0],
                                           start_pos[1]:end_pos[1],
                                           start_pos[2]:end_pos[2]]
-            total_read_time += time() - t
+                total_read_time += time() - t
 
             one_round_split_metadata = {}
 
@@ -372,17 +391,17 @@ class ImageUtils:
                     split_data = data[ix[0]: ix[1], ix[2]: ix[3], ix[4]: ix[5]]
                     td = threading.Thread(target=write_array_to_file,
                                           args=(split_data, i[0],
-                                                self.header_size, hdfs_client))
+                                                self.header_size))
                     td.start()
                     tds.append(td)
                     del split_data
                 for t in tds:
                     t.join()
-            start_index = end_index + 1
+
 
             write_time = time() - st1
             total_write_time += write_time
-            print("writing data takes ", write_time)
+            start_index = end_index + 1
 
         if benchmark:
             return {'split_read_time':total_read_time, 'split_write_time':total_write_time, 'split_seek_time':split_seek_time,
@@ -391,8 +410,7 @@ class ImageUtils:
             return
 
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem,
-                              filename_prefix="bigbrain", extension="nii",
-                              hdfs_client=None, nThreads=1, benchmark=False):
+                              filename_prefix="bigbrain", extension="nii", nThreads=1, benchmark=False):
         """
         Split the input image into several splits,
         all share with the same shape
@@ -405,7 +423,6 @@ class ImageUtils:
         :param filename_prefix: each split's prefix filename
         :param extension: extension of each split
         :param nThreads: number of threads to trigger in each writing process
-        :param hdfs_client: hdfs client
         :return:
         """
         # calculate remainder based on the original image file
@@ -434,7 +451,7 @@ class ImageUtils:
                                            Z_size, X_size, out_dir,
                                            filename_prefix,
                                            extension)
-        generate_legend_file(split_names, "legend.txt", out_dir, hdfs_client)
+        generate_legend_file(split_names, "legend.txt", out_dir)
 
         # generate all the headers for each split
         # in order to reduce overhead when reading headers of splits from hdfs,
@@ -442,9 +459,7 @@ class ImageUtils:
         print("create split meta data dictionary...")
         split_meta_cache = generate_headers_of_splits(split_names, y_size,
                                                       z_size, x_size,
-                                                      self.header
-                                                          .get_data_dtype(),
-                                                      hdfs_client)
+                                                      self.header.get_data_dtype())
 
         print("Get split indexes...")
         split_indexes = get_indexes_of_all_splits(split_names,
@@ -523,7 +538,7 @@ class ImageUtils:
                                          ix[2]: ix[3],
                                          ix[4]: ix[5]]
                     td = threading.Thread(target=write_array_to_file,
-                                          args=(data, i[0], 0, hdfs_client))
+                                          args=(data, i[0], 0))
                     td.start()
                     tds.append(td)
                     del data
@@ -600,7 +615,6 @@ class ImageUtils:
             reconstructed.close()
             return
 
-    # TODO:make it work with HDFS
     def clustered_read(self, reconstructed, legend, mem,
                        input_compressed, benchmark):
         """
@@ -986,7 +1000,7 @@ class ImageUtils:
         else:
             return
 
-    def load_image(self, filepath, in_hdfs=None):
+    def load_image(self, filepath):
 
         """Load image into nibabel
         Keyword arguments:
@@ -1125,43 +1139,31 @@ def generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size,
     return split_names
 
 
-def generate_legend_file(split_names, legend_file_name, out_dir,
-                         hdfs_client=None):
+def generate_legend_file(split_names, legend_file_name, out_dir):
     """
     generate legend file for each all the splits
     """
     legend_file = '{0}/{1}'.format(out_dir, legend_file_name)
 
-    if hdfs_client is None:
-        with open(legend_file, 'a+') as f:
-            for split_name in split_names:
-                f.write('{0}\n'.format(split_name))
-    else:
-        with hdfs_client.write(legend_file) as f:
-            for split_name in split_names:
-                f.write('{0}\n'.format(split_name))
+    with open(legend_file, 'a+') as f:
+        for split_name in split_names:
+            f.write('{0}\n'.format(split_name))
 
     return legend_file
 
 
-def generate_headers_of_splits(split_names, y_size, z_size, x_size, dtype,
-                               hdfs_client=None):
+def generate_headers_of_splits(split_names, y_size, z_size, x_size, dtype):
     """
     generate headers of each splits based on the shape and dtype
     """
     split_meta_cache = {}
     header = generate_header(y_size, z_size, x_size, dtype)
 
-    if hdfs_client is None:
-        for split_name in split_names:
-            with open(split_name, 'w+b') as f:
-                header.write_to(f)
-            split_meta_cache[split_name] = Split(split_name, header)
-    else:
-        for split_name in split_names:
-            with hdfs_client.write(split_name) as f:
-                header.write_to(f)
-            split_meta_cache[split_name] = Split(split_name, header)
+    for split_name in split_names:
+        with open(split_name, 'w+b') as f:
+            header.write_to(f)
+        split_meta_cache[split_name] = Split(split_name, header)
+
 
     return split_meta_cache
 
@@ -1375,37 +1377,30 @@ def check_in_range(next_index, index_list):
     return False
 
 
-def write_array_to_file(data_array, to_file, write_offset, hdfs_client=None):
+def write_array_to_file(data_array, to_file, write_offset):
     """
     :param data_array: consists of consistent data that to bo written to the
                        file
     :param to_file: file path
     :param reconstructed: reconstructed image file to be written
     :param write_offset: file offset to be written
-    :param hdfs_client: HDFS client
     :return: benchmarking params
     """
     write_time = 0
-    seek_time = 0
     seek_number = 0
     data = data_array.tobytes('F')
-    if hdfs_client is None:
-        seek_start = time()
 
-        fd=os.open(to_file, os.O_RDWR | os.O_APPEND)
-        write_start = time()
-        os.pwrite(fd, data, write_offset)
-        write_time += time() - write_start
-        os.close(fd)
-    else:
-        write_start = time()
-        with hdfs_client.write(to_file, append=True) as writer:
-            writer.write(data)
-        seek_number += 1
-        write_time += time() - write_start
+    #write
+    t = time()
+    fd=os.open(to_file, os.O_RDWR | os.O_APPEND)
+    os.pwrite(fd, data, write_offset)
+    os.close(fd)
+    write_time += time() - t
 
     del data_array
     del data
+    seek_number=1
+    seek_time=0
     return seek_time, write_time, seek_number
 
 
@@ -1417,26 +1412,25 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
     :param write_offset: file offset to be written
     :return: benchmarking params
     """
-    seek_time = 0
     write_time = 0
     seek_number = 0
-    no_seek = 0
 
     for k in sorted(data_dict.keys()):
-
         seek_pos = int(header_offset + k * bytes_per_voxel)
         data_bytes = data_dict[k]
-        write_start = time()
+        t = time()
         os.pwrite(to_file.fileno(), data_bytes, seek_pos)
-        write_time += time() - write_start
+        write_time += time() - t
+        seek_number+=1
         del data_dict[k]
         del data_bytes
 
-    st = time()
+    t = time()
     to_file.flush()
     os.fsync(to_file)
-    write_time += time() - st
+    write_time += time() - t
 
+    seek_time = 0
     return seek_time, write_time, seek_number
 
 
