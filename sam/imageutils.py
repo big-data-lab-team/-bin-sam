@@ -262,110 +262,88 @@ class ImageUtils:
         :return:
         """
 
-        total_read_time = 0
-        total_write_time = 0
-        total_seek_time = 0
-        total_seek_number = 0
+        def commented():
+            '''st1 = time()
+            for thread_round in caches:
+                tds = []
+                # one split's metadata triggers one thread
+                for i in thread_round:
+                    ix = [int(x) for x in i[1]]
+                    split_data = data[ix[0]: ix[1], ix[2]: ix[3], ix[4]: ix[5]]
+                    td = threading.Thread(target=write_array_to_file,
+                                          args=(split_data, i[0],
+                                                self.header_size))
+                    td.start()
+                    tds.append(td)
+                    del split_data
+                for t in tds:
+                    t.join()
+            write_time = time() - st1'''
+            pass
 
-        # calculate remainder based on the original image file
-        Y_size, Z_size, X_size = self.header.get_data_shape()
-        bytes_per_voxel = self.header['bitpix'] / 8
-        original_img_voxels = X_size * Y_size * Z_size
+        def file_manipulation(filename_prefix, extension, out_dir):
+            ''' A function.
+            '''
+            # calculate remainder based on the original image file
+            Y_size, Z_size, X_size = self.header.get_data_shape()
+            bytes_per_voxel = self.header['bitpix'] / 8
+            original_img_voxels = X_size * Y_size * Z_size
+            if (X_size % X_splits != 0
+                    or Z_size % Z_splits != 0
+                    or Y_size % Y_splits != 0):
+                raise Exception("There is remainder after splitting, please reset "
+                                "the y,z,x splits")
+            x_size = X_size / X_splits
+            z_size = Z_size / Z_splits
+            y_size = Y_size / Y_splits
 
-        if (X_size % X_splits != 0
-                or Z_size % Z_splits != 0
-                or Y_size % Y_splits != 0):
-            raise Exception("There is remainder after splitting, please reset "
-                            "the y,z,x splits")
-        x_size = X_size / X_splits
-        z_size = Z_size / Z_splits
-        y_size = Y_size / Y_splits
+            # get all split_names and write them to the legend file
+            split_names = generate_splits_name(y_size, z_size, x_size, Y_size,
+                                               Z_size, X_size, out_dir,
+                                               filename_prefix, extension)
+            legend_file = generate_legend_file(split_names, "legend.txt", out_dir)
+            # in order to reduce overhead when reading headers of splits from hdfs,
+            # create a header cache in the local environment
+            split_meta_cache = generate_headers_of_splits(split_names, y_size,
+                                                          z_size, x_size,
+                                                          self.header.get_data_dtype())
+            return (split_names,
+                legend_file,
+                split_meta_cache,
+                bytes_per_voxel,
+                (x_size, z_size, y_size),
+                (X_size, Z_size, Y_size))
 
-        # get all split_names and write them to the legend file
-        split_names = generate_splits_name(y_size, z_size, x_size, Y_size,
-                                           Z_size, X_size, out_dir,
-                                           filename_prefix, extension)
-        legend_file = generate_legend_file(split_names, "legend.txt", out_dir)
-
-        # in order to reduce overhead when reading headers of splits from hdfs,
-        # create a header cache in the local environment
-        split_meta_cache = generate_headers_of_splits(split_names, y_size,
-                                                      z_size, x_size,
-                                                      self.header
-                                                      .get_data_dtype())
-
-        start_index = end_index = 0
-
-        mem = None if mem is not None and mem == 0 else mem
-
-        num_splits = 0
-        if mem is not None:
-            num_splits = mem / (bytes_per_voxel * y_size * z_size * x_size)
-        else:
-            num_splits = 1
-
-        if num_splits == 0:
-            print('ERROR: available memory is too low')
-            sys.exit(1)
-
-        total_seek_number += len(split_names)
-
-        while start_index < len(split_names):
-            start_pos = pos_to_int_tuple(split_ext(split_names[start_index])
-                                         [0].split('_'))
-
+        def getPos(split_names, start_index, sizes, Sizes, split_meta_cache):
+            ''' A function.
+            '''
+            start_pos = pos_to_int_tuple(split_ext(split_names[start_index])[0].split('_'))
             end_index = start_index + num_splits - 1
-
             if end_index >= len(split_names):
                 end_index = len(split_names) - 1
+            split_pos = pos_to_int_tuple(split_ext(split_names[end_index])[0].split('_'))
 
-            split_pos = pos_to_int_tuple(split_ext(split_names[end_index])
-                                         [0].split('_'))
+            x_size, z_size, y_size = sizes
             end_pos = (split_pos[0] + y_size,
                        split_pos[1] + z_size,
                        split_pos[2] + x_size)
             split_pos_in_range = [pos_to_int_tuple(split_ext(x)[0].split('_'))
-                                  for x
-                                  in split_names[start_index:end_index + 1]]
+                                  for x in split_names[start_index:end_index + 1]]
 
+            X_size, Z_size, Y_size = Sizes
             end_index, end_pos = adjust_end_read(split_names, start_pos,
                                                  split_pos, end_pos,
                                                  start_index, end_index,
                                                  split_pos_in_range, Y_size,
                                                  Z_size, split_meta_cache,
                                                  (y_size, z_size, x_size))
-            print(("Reading from {0} at index {1} "
-                   "--> {2} at index {3}").format(start_pos,
-                                                  start_index,
-                                                  end_pos,
-                                                  end_index))
-            extracted_shape = (end_pos[0] - start_pos[0],
-                               end_pos[1] - start_pos[1],
-                               end_pos[2] - start_pos[2])
+            return start_pos, end_pos, start_index, end_index
 
-            if extracted_shape[0] < Y_size:
-                total_seek_number += extracted_shape[1] * extracted_shape[2]
-            elif extracted_shape[1] < Z_size:
-                total_seek_number += extracted_shape[2]
-            else:
-                total_seek_number += 1
-
-            data = None
-
-            if (end_pos[0] - start_pos[0] == Y_size
-                    and end_pos[1] - start_pos[1] == Z_size):
-                t = time()
-                data = self.proxy.dataobj[..., start_pos[2]:end_pos[2]]
-                total_read_time += time() - t
-            else:
-                t = time()
-                data = self.proxy.dataobj[start_pos[0]:end_pos[0],
-                                          start_pos[1]:end_pos[1],
-                                          start_pos[2]:end_pos[2]]
-                total_read_time += time() - t
-
+        def getRound(end_index, start_index, start_pos, split_names, sizes):
+            ''' A function.
+            '''
             one_round_split_metadata = {}
-
+            x_size, z_size, y_size = sizes
             for j in range(0, end_index - start_index + 1):
                 split_start = pos_to_int_tuple(split_ext(split_names
                                                          [start_index + j])
@@ -381,31 +359,95 @@ class ImageUtils:
                      split_start[2], x_e)
 
             caches = _split_arr(one_round_split_metadata.items(), nThreads)
+            return caches
 
-            st1 = time()
-            for thread_round in caches:
-                tds = []
-                # one split's metadata triggers one thread
-                for i in thread_round:
+        def loop_(split_names, start_index, sizes, Sizes, split_meta_cache,
+            split_read_time, split_write_time, split_seek_time, split_seek_number):
+            ''' A function.
+            '''
+            start_pos, end_pos, start_index, end_index = \
+                getPos(split_names, start_index, sizes, Sizes, split_meta_cache)
+
+            print(("Reading from {0} at index {1} "
+                   "--> {2} at index {3}").format(start_pos,
+                                                  start_index,
+                                                  end_pos,
+                                                  end_index))
+
+            extracted_shape = (end_pos[0] - start_pos[0],
+                               end_pos[1] - start_pos[1],
+                               end_pos[2] - start_pos[2])
+
+            X_size, Z_size, Y_size = Sizes
+            if extracted_shape[0] < Y_size:
+                split_seek_number += extracted_shape[1] * extracted_shape[2]
+            elif extracted_shape[1] < Z_size:
+                split_seek_number += extracted_shape[2]
+            else:
+                split_seek_number += 1
+
+            #read splits data
+            data = None
+            if (end_pos[0] - start_pos[0] == Y_size
+                    and end_pos[1] - start_pos[1] == Z_size):
+                t = time()
+                data = self.proxy.dataobj[..., start_pos[2]:end_pos[2]]
+                split_read_time += time() - t
+            else:
+                t = time()
+                data = self.proxy.dataobj[start_pos[0]:end_pos[0],
+                                          start_pos[1]:end_pos[1],
+                                          start_pos[2]:end_pos[2]]
+                split_read_time += time() - t
+
+            #get round
+            caches = getRound(end_index, start_index, start_pos, split_names, sizes)
+            commented()
+
+            #write split files
+            for round in caches:
+                for i in round:
                     ix = [int(x) for x in i[1]]
                     split_data = data[ix[0]: ix[1], ix[2]: ix[3], ix[4]: ix[5]]
-                    td = threading.Thread(target=write_array_to_file,
-                                          args=(split_data, i[0],
-                                                self.header_size))
-                    td.start()
-                    tds.append(td)
-                    del split_data
-                for t in tds:
-                    t.join()
+                    seek_time, write_time, seek_number = write_array_to_file(split_data, i[0],self.header_size)
 
+                    split_write_time += write_time
+                    split_seek_time += seek_time
+                    split_seek_number+=seek_number
+                    start_index = end_index + 1
 
-            write_time = time() - st1
-            total_write_time += write_time
-            start_index = end_index + 1
+            return split_read_time, split_write_time, split_seek_time, split_seek_number, start_index
+
+        split_read_time=0
+        split_write_time=0
+        split_seek_time=0
+        split_seek_number=0
+
+        split_names, legend_file, split_meta_cache, bytes_per_voxel, sizes, Sizes =  \
+            file_manipulation(filename_prefix, extension, out_dir)
+
+        start_index = end_index = 0
+        mem = None if mem is not None and mem == 0 else mem
+        num_splits = 0
+
+        if mem is not None:
+            num_splits = mem / (bytes_per_voxel * sizes[0] * sizes[1] * sizes[2])
+        else:
+            num_splits = 1
+
+        if num_splits == 0:
+            print('ERROR: available memory is too low')
+            sys.exit(1)
+
+        #total_seek_number += len(split_names)
+        while start_index < len(split_names):
+            split_read_time, split_write_time, split_seek_time, split_seek_number, start_index = (loop_(
+                    split_names, start_index, sizes, Sizes, split_meta_cache,
+                    split_read_time, split_write_time, split_seek_time, split_seek_number))
 
         if benchmark:
-            return {'split_read_time':total_read_time, 'split_write_time':total_write_time, 'split_seek_time':split_seek_time,
-                'split_nb_seeks':split_seek_number}
+            return {'split_read_time':split_read_time, 'split_write_time':split_write_time, 'split_seek_time':split_seek_time,
+                'split_nb_seeks':split_nb_seeks}
         else:
             return
 
