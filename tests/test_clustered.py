@@ -28,7 +28,7 @@ def test_clustered_writes():
 
     im.split_clustered_writes(Y_splits=2, Z_splits=2, X_splits=2,
                               out_dir=out_folder, mem=mem,
-                              filename_prefix=strategy, extension="nii")
+                              filename_prefix=strategy, extension="nii", benchmark=True)
 
     expected_filenames = th.get_list_data()
     out_filenames = th.get_list_out(strategy)
@@ -51,7 +51,7 @@ def test_clustered_reads():
                        first_dim=20, second_dim=20, third_dim=20,
                        dtype=np.ushort)
     im.merge(op.join(out_folder, 'legend.txt'), strategy,
-                       mem=mem)
+                       mem=mem, benchmark=True)
 
     th.assert_img_content(exp_recon, out_recon)
 
@@ -64,6 +64,6 @@ def test_clustered_reads_nomem():
                        first_dim=20, second_dim=20, third_dim=20,
                        dtype=np.ushort)
     im.merge(op.join(out_folder, 'legend.txt'), strategy,
-                       mem=0)
+                       mem=0, benchmark=True)
 
     th.assert_img_content(exp_recon, out_recon)

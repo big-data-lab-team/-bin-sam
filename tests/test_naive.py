@@ -23,7 +23,7 @@ def test_naive_splits():
                                         "test_reconstructed.nii"))
 
     im.split(first_dim=10, second_dim=10, third_dim=10,
-             local_dir=out_folder, filename_prefix="naive")
+             local_dir=out_folder, filename_prefix="naive", benchmark=True)
 
     expected_filenames = th.get_list_data()
     out_filenames = th.get_list_out(strategy)
