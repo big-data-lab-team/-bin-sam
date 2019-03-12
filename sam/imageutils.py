@@ -1068,7 +1068,7 @@ class ImageUtils:
         merge_read_time = 0
         merge_seek_time = 0
         merge_write_time = 0
-        merge_seek_number = 0
+        merge_nb_seeks = 0
 
         # get how many voxels per round
         voxels = mem / bytes_per_voxel
@@ -1077,24 +1077,22 @@ class ImageUtils:
         # read the headers of all the splits
         # to filter the splits out of the write range
         sorted_split_name_list = sort_split_names(legend)
+        if benchmark:
+            merge_nb_seeks+=len(sorted_split_name_list)
         split_meta_cache = {}
-
         for s in sorted_split_name_list:
             split_meta_cache[s] = Split(s)
-
         split_indexes = get_indexes_of_all_splits(sorted_split_name_list,
                                                   split_meta_cache,
                                                   Y_size, Z_size)
 
         # Core loop
         while True:
-
             next_write_offsets = (next_write_index[0] * bytes_per_voxel,
                                   next_write_index[1] * bytes_per_voxel + 1)
             print("**************From {} "
                   "to {}*****************".format(next_write_offsets[0],
                                                   next_write_offsets[1]))
-
             data_dict = {}
             found_first_split_in_range = False
 
@@ -1102,7 +1100,7 @@ class ImageUtils:
                 in_range = check_in_range(next_write_index,
                                           split_indexes[split_name])
                 if in_range:
-
+                    #READ
                     found_first_split_in_range = True
                     read_time_one_r = extract_rows(Split(split_name),
                                                    data_dict,
@@ -1111,7 +1109,6 @@ class ImageUtils:
                                                    input_compressed, benchmark)
 
                     if benchmark:
-                        merge_seek_number += 1
                         merge_read_time += read_time_one_r
 
                 elif not found_first_split_in_range:
@@ -1127,7 +1124,7 @@ class ImageUtils:
 
             if benchmark:
                 merge_seek_number += seek_number
-                merge_seek_time += seek_time
+                merge_nb_seeks += seek_time
                 merge_write_time += write_time
 
             next_write_index = (next_write_index[1] + 1,
@@ -1141,14 +1138,14 @@ class ImageUtils:
             # if write range is larger img size, we are done
             if next_write_index[0] >= reconstructed_img_voxels:
                 break
-
             del data_dict
 
+        #endofwhile
         if benchmark:
             print(merge_read_time, merge_write_time,
                   merge_seek_time, merge_seek_number)
             return {'merge_read_time':merge_read_time, 'merge_write_time':merge_write_time, 'merge_seek_time':merge_seek_time,
-                    'merge_nb_seeks':merge_seek_number}
+                    'merge_nb_seeks':merge_nb_seeks}
         else:
             return
 
@@ -1436,10 +1433,12 @@ def extract_rows(split, data_dict, index_list, write_index,
     read_time_one_r = 0
     write_start, write_end = write_index
 
-    ts1 = time()
-    split_data = split.proxy.get_data()
-    if benchmark and input_compressed:
-        read_time_one_r += time() - ts1
+    if benchmark: #if benchmark and input_compressed:
+        t=time()
+        split_data=split.proxy.get_data()
+        read_time_one_r+=time()-t
+    else:
+        split_data=split.proxy.get_data()
 
     for n, index in enumerate(index_list):
 
@@ -1450,33 +1449,27 @@ def extract_rows(split, data_dict, index_list, write_index,
         i = int(n / (split.split_z))
 
         if index_start >= write_start and index_end <= write_end:
-            st = time()
             data_bytes = split_data[..., j, i].tobytes('F')
-            st2 = time()
             data_dict[index_start] = data_bytes
-            if benchmark and not input_compressed:
-                read_time_one_r += st2 - st
+            '''if benchmark and not input_compressed:
+                read_time_one_r += st2 - st'''
 
         # if split's one row's start index is in the write range,
         # but end index is outside of write range.
         elif index_start <= write_end <= index_end:
-            st = time()
             data_bytes = split_data[: (write_end - index_start + 1), j, i] \
                 .tobytes('F')
-            st2 = time()
             data_dict[index_start] = data_bytes
-            if benchmark and not input_compressed:
-                read_time_one_r += st2 - st
+            '''if benchmark and not input_compressed:
+                read_time_one_r += st2 - st'''
         # if split's one row's end index is in the write range,
         # but start index is outside of write range.
         elif index_start <= write_start <= index_end:
-            st = time()
             data_bytes = split_data[write_start - index_start:, j, i] \
                 .tobytes('F')
-            st2 = time()
             data_dict[write_start] = data_bytes
-            if benchmark and not input_compressed:
-                read_time_one_r += st2 - st
+            '''if benchmark and not input_compressed:
+                read_time_one_r += st2 - st'''
 
         # if not in the write range
         else:
