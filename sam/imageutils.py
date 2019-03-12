@@ -1123,8 +1123,8 @@ class ImageUtils:
                                    bytes_per_voxel, header_offset, benchmark)
 
             if benchmark:
-                merge_seek_number += seek_number
-                merge_nb_seeks += seek_time
+                merge_nb_seeks += seek_number
+                merge_seek_time += seek_time
                 merge_write_time += write_time
 
             next_write_index = (next_write_index[1] + 1,
@@ -1143,7 +1143,7 @@ class ImageUtils:
         #endofwhile
         if benchmark:
             print(merge_read_time, merge_write_time,
-                  merge_seek_time, merge_seek_number)
+                  merge_seek_time, merge_nb_seeks)
             return {'merge_read_time':merge_read_time, 'merge_write_time':merge_write_time, 'merge_seek_time':merge_seek_time,
                     'merge_nb_seeks':merge_nb_seeks}
         else:
