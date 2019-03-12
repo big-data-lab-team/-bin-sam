@@ -912,14 +912,14 @@ class ImageUtils:
 
         """
 
-        write_type = None
-        start_split = Split(splits[start_index].strip())
-        start_pos = pos_to_int_tuple(start_split.split_pos)
-        end_split = Split(splits[end_index].strip())
-        split_pos = pos_to_int_tuple(end_split.split_pos)
-        end_pos = (split_pos[0] + end_split.split_y,
+        
+        '''start_split = Split(splits[start_index].strip())'''
+        '''start_pos = pos_to_int_tuple(start_split.split_pos)
+        end_split = Split(splits[end_index].strip())'''
+        '''split_pos = pos_to_int_tuple(end_split.split_pos)'''
+        '''end_pos = (split_pos[0] + end_split.split_y,
                    split_pos[1] + end_split.split_z,
-                   split_pos[2] + end_split.split_x)
+                   split_pos[2] + end_split.split_x)'''
 
         read_time = 0
         for i in range(start_index, end_index + 1):
@@ -1073,7 +1073,6 @@ class ImageUtils:
         header_offset = self.header.single_vox_offset
         reconstructed_img_voxels = X_size * Y_size * Z_size
 
-        # for now always going to return benchmarks
         # if benchmark:
         merge_read_time = 0
         merge_seek_time = 0
