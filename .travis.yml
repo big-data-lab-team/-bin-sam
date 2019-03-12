@@ -7,17 +7,12 @@ python:
     - 3.6
     - nightly
 
-matrix:
-  include:
-    - python: 3.7
-      dist: xenial
-      sudo: true
-
 install:
     - pip install coveralls pytest==3.6 pytest-cov pycodestyle nibabel
 
 script:
-    - python -m pytest
+    - pycodestyle sam/imageutils.py tests/*.py
+    - pytest --cov=sam ./
 
 after_success:
     - coveralls
