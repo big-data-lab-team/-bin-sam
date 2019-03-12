@@ -197,6 +197,7 @@ class ImageUtils:
                     nib.save(split_image, imagepath)
                     if benchmark:
                         total_write_time+=time()-t
+                        split_seek_number+=1
 
                     legend_path = '{0}/legend.txt'.format(local_dir)
 
@@ -258,11 +259,11 @@ class ImageUtils:
         :param extension: extension of each split
         :param nThreads: number of threads to trigger in each writing process
         :param benchmark: If set to true the function will return
-                                          a dictionary containing benchmark information.
+                        a dictionary containing benchmark information.
         :return:
         """
 
-        def commented():
+        def threaded():
             '''st1 = time()
             for thread_round in caches:
                 tds = []
@@ -362,7 +363,7 @@ class ImageUtils:
             return caches
 
         def loop_(split_names, start_index, sizes, Sizes, split_meta_cache,
-            split_read_time, split_write_time, split_seek_time, split_seek_number):
+            split_read_time, split_write_time, split_seek_time, split_seek_number, benchmark):
             ''' A function.
             '''
             start_pos, end_pos, start_index, end_index = \
@@ -379,80 +380,129 @@ class ImageUtils:
                                end_pos[2] - start_pos[2])
 
             X_size, Z_size, Y_size = Sizes
-            if extracted_shape[0] < Y_size:
-                split_seek_number += extracted_shape[1] * extracted_shape[2]
-            elif extracted_shape[1] < Z_size:
-                split_seek_number += extracted_shape[2]
-            else:
-                split_seek_number += 1
+            if benchmark:
+                if extracted_shape[0] < Y_size:
+                    split_seek_number += extracted_shape[1] * extracted_shape[2]
+                elif extracted_shape[1] < Z_size:
+                    split_seek_number += extracted_shape[2]
+                else:
+                    split_seek_number += 1
 
             #read splits data
             data = None
             if (end_pos[0] - start_pos[0] == Y_size
                     and end_pos[1] - start_pos[1] == Z_size):
-                t = time()
+                if benchmark:
+                    t = time()
                 data = self.proxy.dataobj[..., start_pos[2]:end_pos[2]]
-                split_read_time += time() - t
+                if benchmark:
+                    split_read_time += time() - t
             else:
-                t = time()
+                if benchmark:
+                    t = time()
                 data = self.proxy.dataobj[start_pos[0]:end_pos[0],
                                           start_pos[1]:end_pos[1],
                                           start_pos[2]:end_pos[2]]
-                split_read_time += time() - t
+                if benchmark:
+                    split_read_time += time() - t
 
             #get round
             caches = getRound(end_index, start_index, start_pos, split_names, sizes)
-            commented()
+            threaded()
 
             #write split files
             for round in caches:
                 for i in round:
                     ix = [int(x) for x in i[1]]
                     split_data = data[ix[0]: ix[1], ix[2]: ix[3], ix[4]: ix[5]]
-                    seek_time, write_time, seek_number = write_array_to_file(split_data, i[0],self.header_size)
 
-                    split_write_time += write_time
-                    split_seek_time += seek_time
-                    split_seek_number+=seek_number
+                    if benchmark:
+                        seek_time, write_time, seek_number = write_array_to_file(split_data, i[0],self.header_size, benchmark)
+                        split_write_time += write_time
+                        split_seek_time += seek_time
+                        split_seek_number+= seek_number
+                    else:
+                        write_array_to_file(split_data, i[0],self.header_size, benchmark)
+
                     start_index = end_index + 1
 
-            return split_read_time, split_write_time, split_seek_time, split_seek_number, start_index
+            if benchmark:
+                return (start_index,
+                        split_names,
+                        split_read_time,
+                        split_write_time,
+                        split_seek_time,
+                        split_seek_number,
+                        start_index)
+            else:
+                return start_index, split_names
 
+        #begin function
         split_read_time=0
         split_write_time=0
         split_seek_time=0
         split_seek_number=0
 
+        #get metadata
         split_names, legend_file, split_meta_cache, bytes_per_voxel, sizes, Sizes =  \
             file_manipulation(filename_prefix, extension, out_dir)
 
+        #manage memory
         start_index = end_index = 0
         mem = None if mem is not None and mem == 0 else mem
         num_splits = 0
-
         if mem is not None:
             num_splits = mem / (bytes_per_voxel * sizes[0] * sizes[1] * sizes[2])
         else:
             num_splits = 1
-
         if num_splits == 0:
-            print('ERROR: available memory is too low')
-            sys.exit(1)
+            raise ValueError('Available memory is too low')
 
-        #total_seek_number += len(split_names)
+        split_seek_number += len(split_names) #count 1 seek for each file open (think about disk seek)
+
+        #clustered writes
         while start_index < len(split_names):
-            split_read_time, split_write_time, split_seek_time, split_seek_number, start_index = (loop_(
-                    split_names, start_index, sizes, Sizes, split_meta_cache,
-                    split_read_time, split_write_time, split_seek_time, split_seek_number))
+            if benchmark:
+                (start_index,
+                split_names,
+                split_read_time,
+                split_write_time,
+                split_seek_time,
+                split_seek_number) = (loop_(
+                        split_names,
+                        start_index,
+                        sizes,
+                        Sizes,
+                        split_meta_cache,
+                        split_read_time,
+                        split_write_time,
+                        split_seek_time,
+                        split_seek_number,
+                        benchmark))
+            else:
+                start_index, split_names=(loop_(
+                        split_names,
+                        start_index,
+                        sizes,
+                        Sizes,
+                        split_meta_cache,
+                        split_read_time,
+                        split_write_time,
+                        split_seek_time,
+                        split_seek_number,
+                        benchmark))
 
         if benchmark:
-            return {'split_read_time':split_read_time, 'split_write_time':split_write_time, 'split_seek_time':split_seek_time,
-                'split_nb_seeks':split_nb_seeks}
+            return {'split_read_time':split_read_time,
+                    'split_write_time':split_write_time,
+                    'split_seek_time':split_seek_time,
+                    'split_nb_seeks':split_nb_seeks}
         else:
             return
 
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem,
-                              filename_prefix="bigbrain", extension="nii", nThreads=1, benchmark=False):
+                              filename_prefix="bigbrain", extension="nii", nThreads=1,
+                              benchmark=False):
         """
         Split the input image into several splits,
         all share with the same shape
@@ -465,100 +515,13 @@ class ImageUtils:
         :param filename_prefix: each split's prefix filename
         :param extension: extension of each split
         :param nThreads: number of threads to trigger in each writing process
+        :param benchmark: If set to true the function will return
+                        a dictionary containing benchmark information.
         :return:
         """
-        # calculate remainder based on the original image file
-        Y_size, Z_size, X_size = self.header.get_data_shape()
-        bytes_per_voxel = self.header['bitpix'] / 8
-        original_img_voxels = X_size * Y_size * Z_size
 
-        if (X_size % X_splits != 0
-                or Z_size % Z_splits != 0
-                or Y_size % Y_splits != 0):
-            raise Exception("There is remainder after splitting, "
-                            "please reset the y,z,x splits")
-        x_size = X_size / X_splits
-        z_size = Z_size / Z_splits
-        y_size = Y_size / Y_splits
-
-        if benchmark:
-            # for benchmarking
-            total_read_time = 0
-            total_seek_time = 0
-            total_write_time = 0
-            total_seek_number = 0
-
-        # get all split_names and write them to the legend file
-        split_names = generate_splits_name(y_size, z_size, x_size, Y_size,
-                                           Z_size, X_size, out_dir,
-                                           filename_prefix,
-                                           extension)
-        generate_legend_file(split_names, "legend.txt", out_dir)
-
-        # generate all the headers for each split
-        # in order to reduce overhead when reading headers of splits from hdfs,
-        # create a header cache in the local environment
-        print("create split meta data dictionary...")
-        split_meta_cache = generate_headers_of_splits(split_names, y_size,
-                                                      z_size, x_size,
-                                                      self.header.get_data_dtype())
-
-        print("Get split indexes...")
-        split_indexes = get_indexes_of_all_splits(split_names,
-                                                  split_meta_cache,
-                                                  Y_size, Z_size)
-        # drop the remainder which is less than one slice
-        # if mem is less than one slice, then set mem to one slice
-        mem = mem - mem % (Y_size * Z_size * bytes_per_voxel) \
-            if mem >= Y_size * Z_size * bytes_per_voxel \
-            else Y_size * Z_size * bytes_per_voxel
-
-        # get how many voxels per round
-        voxels = mem // bytes_per_voxel
-        next_read_index = (0, voxels - 1)
-
-        # Core Loop:
-        while True:
-            next_read_offsets = (next_read_index[0] * bytes_per_voxel,
-                                 next_read_index[1] * bytes_per_voxel + 1)
-            st = time()
-            print("From {} to {}".format(next_read_offsets[0],
-                                         next_read_offsets[1]))
-            from_x_index = index_to_voxel(next_read_index[0],
-                                          Y_size, Z_size)[2]
-            to_x_index = index_to_voxel(next_read_index[1] + 1,
-                                        Y_size, Z_size)[2]
-
-            st_read_time = time()
-            print("start reading data to memory...")
-            data_in_range = self.proxy.dataobj[..., from_x_index: to_x_index]
-
-            if benchmark:
-                end_time = time() - st_read_time
-                total_read_time += end_time
-                print("reading data takes ", end_time)
-                total_seek_number += 1
-
-            one_round_split_metadata = {}
-            # create split metadata for all splits(position, write_range, etc.)
-            for split_name in split_names:
-                if check_in_range(next_read_index, split_indexes[split_name]):
-                    split = split_meta_cache[split_name]
-                    (X_index_min, X_index_max,
-                     x_index_min, x_index_max) = \
-                        extract_slices_range(split,
-                                             next_read_index, Y_size,
-                                             Z_size)
-                    y_index_min = int(split.split_pos[-3])
-                    z_index_min = int(split.split_pos[-2])
-                    y_index_max = y_index_min + split.split_y
-                    z_index_max = z_index_min + split.split_z
-                    one_round_split_metadata[split_name] = \
-                        (y_index_min, y_index_max, z_index_min, z_index_max,
-                         X_index_min - from_x_index,
-                         X_index_max - from_x_index + 1)
-
-            # Using multi-threading to send data to hdfs in parallel,
+        def threaded_multiple():
+            '''# Using multi-threading to send data to hdfs in parallel,
             # which will parallelize writing process.
             # nThreads: number of threads that are working on writing
             # data at the same time.
@@ -580,34 +543,203 @@ class ImageUtils:
                                          ix[2]: ix[3],
                                          ix[4]: ix[5]]
                     td = threading.Thread(target=write_array_to_file,
-                                          args=(data, i[0], 0))
+                                          args=(data, i[0], 0, benchmark))
                     td.start()
                     tds.append(td)
                     del data
                 for t in tds:
-                    t.join()
+                    t.join()'''
+            pass
 
-            write_time = time() - st1
-            print("writing data takes ", write_time)
+        def compute_sizes(Y_splits, Z_splits, X_splits):
+            ''' A function.
+            '''
+            Y_size, Z_size, X_size = self.header.get_data_shape() # calculate remainder based on the original image file
+            bytes_per_voxel = self.header['bitpix'] / 8
+
+            if (X_size % X_splits != 0
+                    or Z_size % Z_splits != 0
+                    or Y_size % Y_splits != 0):
+                raise Exception("There is remainder after splitting, "
+                                "please reset the y,z,x splits")
+            x_size = X_size / X_splits
+            z_size = Z_size / Z_splits
+            y_size = Y_size / Y_splits
+            return (x_size, z_size, y_size), (X_size, Z_size, Y_size), bytes_per_voxel
+
+        def file_manipulation_multiple(sizes, Sizes, filename_prefix):
+            ''' A function.
+            '''
+
+            x_size, z_size, y_size = sizes
+            X_size, Z_size, Y_size = Sizes
+            # get all split_names and write them to the legend file
+            split_names = generate_splits_name(y_size, z_size, x_size, Y_size,
+                                               Z_size, X_size, out_dir,
+                                               filename_prefix,
+                                               extension)
+            generate_legend_file(split_names, "legend.txt", out_dir)
+
+            # generate all the headers for each split
+            # in order to reduce overhead when reading headers of splits from hdfs,
+            # create a header cache in the local environment
+            print("create split meta data dictionary...")
+            split_meta_cache = generate_headers_of_splits(split_names, y_size,
+                                                          z_size, x_size,
+                                                          self.header.get_data_dtype())
+
+            print("Get split indexes...")
+            split_indexes = get_indexes_of_all_splits(split_names,
+                                                      split_meta_cache,
+                                                      Y_size, Z_size)
+            return split_indexes, split_names, split_meta_cache
+
+        def get_metadata_multiple(split_indexes, split_names, split_meta_cache, from_x_index):
+            ''' A function.
+            '''
+
+            # create split metadata for all splits(position, write_range, etc.)
+            one_round_split_metadata = {}
+            for split_name in split_names:
+                if check_in_range(next_read_index, split_indexes[split_name]):
+                    split = split_meta_cache[split_name]
+                    (X_index_min, X_index_max,
+                     x_index_min, x_index_max) = \
+                        extract_slices_range(split,
+                                             next_read_index, Y_size,
+                                             Z_size)
+                    y_index_min = int(split.split_pos[-3])
+                    z_index_min = int(split.split_pos[-2])
+                    y_index_max = y_index_min + split.split_y
+                    z_index_max = z_index_min + split.split_z
+                    one_round_split_metadata[split_name] = \
+                        (y_index_min, y_index_max, z_index_min, z_index_max,
+                         X_index_min - from_x_index,
+                         X_index_max - from_x_index + 1)
+            return one_round_split_metadata
+
+        def loop_multiple(next_read_index,
+                        bytes_per_voxel,
+                        Sizes,
+                        split_indexes,
+                        split_names,
+                        split_meta_cache,
+                        split_read_time,
+                        split_write_time,
+                        split_seek_time,
+                        split_seek_number,
+                        benchmark):
+            ''' A function.
+            '''
+
+            X_size, Z_size, Y_size = Sizes
+            original_img_voxels = X_size * Y_size * Z_size
+            next_read_offsets = (next_read_index[0] * bytes_per_voxel,
+                                 next_read_index[1] * bytes_per_voxel + 1)
+            print("From {} to {}".format(next_read_offsets[0],
+                                         next_read_offsets[1]))
+            from_x_index = index_to_voxel(next_read_index[0],
+                                          Y_size, Z_size)[2]
+            to_x_index = index_to_voxel(next_read_index[1] + 1,
+                                        Y_size, Z_size)[2]
+
+            #read
+            print("Start reading data to memory...")
             if benchmark:
-                total_write_time += write_time
+                t = time()
+            data_in_range = self.proxy.dataobj[..., from_x_index: to_x_index]
+            if benchmark:
+                split_read_time += time() - t
+                split_nb_seeks += 1
+                print("Reading data took ", end_time)
 
-            # clean
-            del caches
-            del one_round_split_metadata
+            one_round_split_metadata = get_metadata_multiple(split_indexes, split_names, split_meta_cache, from_x_index)
+            caches = _split_arr(one_round_split_metadata.items(), nThreads)
+            threaded_multiple()
+            for round in caches:
+                for i in round:
+                    ix = i[1]
+                    data = data_in_range[ix[0]:ix[1],ix[2]:ix[3],ix[4]:ix[5]]
+                    if benchmark:
+                        seek_time, write_time, seek_number = write_array_to_file(data, i[0], 0, benchmark)
+                        split_write_time += write_time
+                        split_seek_time += seek_time
+                        split_nb_seeks += seek_number
+                        print("writing data takes ", write_time)
+                    else:
+                        write_array_to_file(data, i[0], 0, benchmark)
 
             next_read_index = (next_read_index[1] + 1,
                                next_read_index[1] + voxels)
+
             #  last write, write no more than image size
             if next_read_index[1] >= original_img_voxels:
                 next_read_index = (next_read_index[0], original_img_voxels - 1)
-            # if write range is larger img size, we are done
-            if next_read_index[0] >= original_img_voxels:
-                break
-            # clear
+
+            del caches
+            del one_round_split_metadata
             del data_in_range
 
-            print("one memory load takes ", time() - st)
+            if benchmark :
+                return (next_read_index,
+                        split_read_time,
+                        split_write_time,
+                        split_seek_time,
+                        split_seek_number)
+            else:
+                return next_read_index
+
+        #begin algorithm
+        split_read_time = 0
+        split_seek_time = 0
+        split_write_time = 0
+        split_seek_number = 0
+
+        #preparation
+        sizes, Sizes, bytes_per_voxel = compute_sizes(Y_splits, Z_splits, X_splits)
+        X_size, Z_size, Y_size = Sizes
+        original_img_voxels = X_size * Y_size * Z_size
+        split_indexes, split_names, split_meta_cache = file_manipulation_multiple(sizes, Sizes, filename_prefix)
+
+        # drop the remainder which is less than one slice
+        # if mem is less than one slice, then set mem to one slice
+        mem = mem - mem % (Y_size * Z_size * bytes_per_voxel) \
+            if mem >= Y_size * Z_size * bytes_per_voxel \
+            else Y_size * Z_size * bytes_per_voxel
+        voxels = mem // bytes_per_voxel # get how many voxels per round
+        next_read_index = (0, voxels - 1)
+
+        while True:
+            if benchmark :
+                (next_read_index,
+                split_read_time,
+                split_write_time,
+                split_seek_time,
+                split_seek_number) = (loop_multiple(next_read_index,
+                                        bytes_per_voxel,
+                                        Sizes,
+                                        split_indexes,
+                                        split_names,
+                                        split_meta_cache,
+                                        split_read_time,
+                                        split_write_time,
+                                        split_seek_time,
+                                        split_seek_number,
+                                        benchmark))
+            else:
+                next_read_index = loop_multiple(next_read_index,
+                                        bytes_per_voxel,
+                                        Sizes,
+                                        split_indexes,
+                                        split_names,
+                                        split_meta_cache,
+                                        split_read_time,
+                                        split_write_time,
+                                        split_seek_time,
+                                        split_seek_number,
+                                        benchmark)
+            if next_read_index[0] >= original_img_voxels: # if write range is larger than img size, we are done
+                break
 
         if benchmark:
             return {'split_read_time':total_read_time, 'split_write_time':total_write_time, 'split_seek_time':split_seek_time,
@@ -1419,7 +1551,7 @@ def check_in_range(next_index, index_list):
     return False
 
 
-def write_array_to_file(data_array, to_file, write_offset):
+def write_array_to_file(data_array, to_file, write_offset, benchmark):
     """
     :param data_array: consists of consistent data that to bo written to the
                        file
@@ -1428,22 +1560,28 @@ def write_array_to_file(data_array, to_file, write_offset):
     :param write_offset: file offset to be written
     :return: benchmarking params
     """
-    write_time = 0
-    seek_number = 0
     data = data_array.tobytes('F')
 
     #write
-    t = time()
+    if benchmark:
+        write_time = 0
+        seek_number = 0
+        t = time()
     fd=os.open(to_file, os.O_RDWR | os.O_APPEND)
     os.pwrite(fd, data, write_offset)
     os.close(fd)
-    write_time += time() - t
+    if benchmark:
+        write_time += time() - t
 
     del data_array
     del data
-    seek_number=1
-    seek_time=0
-    return seek_time, write_time, seek_number
+
+    if benchmark:
+        seek_number=2 #1 for opening file, 1 for seeking into the file
+        seek_time=0
+        return seek_time, write_time, seek_number
+    else:
+        return
 
 
 def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
