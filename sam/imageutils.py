@@ -315,21 +315,22 @@ class ImageUtils:
                 (x_size, z_size, y_size),
                 (X_size, Z_size, Y_size))
 
-        def getPos(split_names, start_index, sizes, Sizes, split_meta_cache):
+        def getPos(split_names, start_index, sizes, Sizes, split_meta_cache, num_splits):
             ''' A function.
             '''
+            start_index = int(start_index)
             start_pos = pos_to_int_tuple(split_ext(split_names[start_index])[0].split('_'))
             end_index = start_index + num_splits - 1
             if end_index >= len(split_names):
                 end_index = len(split_names) - 1
-            split_pos = pos_to_int_tuple(split_ext(split_names[end_index])[0].split('_'))
+            split_pos = pos_to_int_tuple(split_ext(split_names[int(end_index)])[0].split('_'))
 
             x_size, z_size, y_size = sizes
             end_pos = (split_pos[0] + y_size,
                        split_pos[1] + z_size,
                        split_pos[2] + x_size)
             split_pos_in_range = [pos_to_int_tuple(split_ext(x)[0].split('_'))
-                                  for x in split_names[start_index:end_index + 1]]
+                                  for x in split_names[int(start_index):int(end_index) + 1]]
 
             X_size, Z_size, Y_size = Sizes
             end_index, end_pos = adjust_end_read(split_names, start_pos,
@@ -363,11 +364,11 @@ class ImageUtils:
             return caches
 
         def loop_(split_names, start_index, sizes, Sizes, split_meta_cache,
-            split_read_time, split_write_time, split_seek_time, split_seek_number, benchmark):
+            split_read_time, split_write_time, split_seek_time, split_seek_number, benchmark, num_splits):
             ''' A function.
             '''
             start_pos, end_pos, start_index, end_index = \
-                getPos(split_names, start_index, sizes, Sizes, split_meta_cache)
+                getPos(split_names, start_index, sizes, Sizes, split_meta_cache, num_splits)
 
             print(("Reading from {0} at index {1} "
                    "--> {2} at index {3}").format(start_pos,
@@ -398,6 +399,8 @@ class ImageUtils:
                 if benchmark:
                     split_read_time += time() - t
             else:
+                start_pos = list(map(lambda x: int(x), start_pos))
+                end_pos = list(map(lambda x: int(x), end_pos))
                 if benchmark:
                     t = time()
                 data = self.proxy.dataobj[start_pos[0]:end_pos[0],
@@ -477,7 +480,8 @@ class ImageUtils:
                         split_write_time,
                         split_seek_time,
                         split_nb_seeks,
-                        benchmark))
+                        benchmark,
+                        num_splits))
             else:
                 start_index, split_names=(loop_(
                         split_names,
@@ -489,7 +493,8 @@ class ImageUtils:
                         split_write_time,
                         split_seek_time,
                         split_nb_seeks,
-                        benchmark))
+                        benchmark,
+                        num_splits))
 
         if benchmark:
             return {'split_read_time':split_read_time,
@@ -650,7 +655,7 @@ class ImageUtils:
             print("Start reading data to memory...")
             if benchmark:
                 t = time()
-            data_in_range = self.proxy.dataobj[..., from_x_index: to_x_index]
+            data_in_range = self.proxy.dataobj[..., int(from_x_index): int(to_x_index)]
             if benchmark:
                 split_read_time += time() - t
                 split_nb_seeks += 1
@@ -661,6 +666,7 @@ class ImageUtils:
             for round in caches:
                 for i in round:
                     ix = i[1]
+                    ix = list(map(lambda x: int(x), ix))
                     data = data_in_range[ix[0]:ix[1],ix[2]:ix[3],ix[4]:ix[5]]
                     if benchmark:
                         seek_time, write_time, seek_number = write_array_to_file(data, i[0], 0, benchmark)
@@ -1269,7 +1275,7 @@ def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index,
                        split_pos[1] + split_shape[1],
                        split_pos[2] + split_shape[2])
 
-    return end_idx, end_pos
+    return int(end_idx), list(map(lambda x:int(x), end_pos))
 
 
 def generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size,
@@ -1431,7 +1437,9 @@ def extract_rows(split, data_dict, index_list, write_index,
     and write the data to a numpy array
     """
     read_time_one_r = 0
+    write_index = list(map(lambda x: int(x), write_index))
     write_start, write_end = write_index
+    index_list = list(map(lambda x: int(x), index_list))
 
     if benchmark: #if benchmark and input_compressed:
         t=time()
@@ -1444,6 +1452,8 @@ def extract_rows(split, data_dict, index_list, write_index,
 
         index_start = index
         index_end = index + split.split_y
+        index_start = int(index_start)
+        index_end = int(index_end)
 
         j = int(n % (split.split_z))
         i = int(n / (split.split_z))
