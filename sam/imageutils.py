@@ -26,20 +26,21 @@ class ImageUtils:
         """
         Keyword arguments:
             filepath                                : filepath to image
-            first_dim, second_dim, third_dim        : the shape of the image. Only
-                                                      required if image needs to be
-                                                      generated
-            dtype                                   : the numpy dtype of the image.
-                                                      Only required if image needs
+            first_dim, second_dim, third_dim        : the shape of the image.
+                                                      Only required if image
+                                                      needs to be generated
+            dtype                                   : the numpy dtype of the
+                                                      image. Only required if
+                                                      image needs
                                                       to be generated
         """
 
-        #load image
+        # load image
         self.filepath = filepath
         self.proxy = self.load_image(filepath)
         self.extension = split_ext(filepath)[1]
 
-        #get header
+        # get header
         if self.proxy:
             self.header = self.proxy.header
             if dtype is not None:
@@ -51,12 +52,13 @@ class ImageUtils:
                                           third_dim, dtype)
             self.dtype = dtype
         else:
-            raise ValueError('Cannot generate a header (probably missing some argument).')
+            raise ValueError('Cannot generate a header \
+                                (probably missing some argument).')
 
         self.affine = self.header.get_best_affine()
         self.header_size = self.header.single_vox_offset
 
-        #define merging functions
+        # define merging functions
         self.merge_types = {
             Merge.clustered: self.clustered_read,
             Merge.multiple: self.multiple_reads
@@ -80,14 +82,15 @@ class ImageUtils:
         """Naive strategy. Splits the 3d-image into shapes of given dimensions.
 
         Keyword arguments:
-            first_dim, second_dim, third_dim: the desired first, second and third
-                                              dimensions of the splits,
+            first_dim, second_dim, third_dim: the desired first, second and
+                                              third dimensions of the splits,
                                               respectively.
-            local_dir                       : the path to the local directory in
-                                              which the images will be saved
+            local_dir                       : the path to the local directory
+                                              in which the images will be saved
             filename_prefix                 : the filename prefix
-            benchmark                       : If set to true the function will return
-                                              a dictionary containing benchmark information.
+            benchmark                       : If set to true the function will
+                                              return a dictionary containing
+                                              benchmark information.
         """
         try:
             if self.proxy is None:
@@ -97,11 +100,11 @@ class ImageUtils:
             print('AttributeError: ', aerr)
             sys.exit(1)
 
-        #for benchmark, if benchmark==true
-        split_read_time=0
-        split_write_time=0
-        split_seek_time=0
-        split_seek_number=0
+        # for benchmark, if benchmark==true
+        split_read_time = 0
+        split_write_time = 0
+        split_seek_time = 0
+        split_seek_number = 0
 
         num_x_iters = int(ceil(self.proxy.dataobj.shape[2] / third_dim))
         num_z_iters = int(ceil(self.proxy.dataobj.shape[1] / second_dim))
@@ -140,21 +143,28 @@ class ImageUtils:
                     y_start = y * first_dim
                     y_end = (y + 1) * first_dim
 
-                    #use of naive_nb_seeks to get an estimate number of seeks during the reading phase
-                    dataobj=self.proxy.dataobj
-                    sliceobj = (slice(y_start,y_end),
-                               slice(z_start,z_end),
-                               slice(x_start,x_end))
-                    split_seek_number += self.naive_nb_seeks(sliceobj, dataobj.shape, dataobj.dtype, dataobj.offset, 'C', None)
+                    # use of naive_nb_seeks to get an estimate number of seeks
+                    # during the reading phase
+                    dataobj = self.proxy.dataobj
+                    sliceobj = (slice(y_start, y_end),
+                                slice(z_start, z_end),
+                                slice(x_start, x_end))
+                    split_seek_number += self.naive_nb_seeks(
+                                                sliceobj,
+                                                dataobj.shape,
+                                                dataobj.dtype,
+                                                dataobj.offset,
+                                                'C',
+                                                None)
 
-                    #1 seek per segment
+                    # 1 seek per segment
                     if benchmark:
-                        t=time()
+                        t = time()
                     split_array = self.proxy.dataobj[y_start:y_end,
                                                      z_start:z_end,
                                                      x_start:x_end]
                     if benchmark:
-                        split_read_time+=time()-t
+                        split_read_time += time() - t
 
                     split_image = nib.Nifti1Image(split_array, self.affine)
                     imagepath = None
@@ -193,31 +203,31 @@ class ImageUtils:
                                                        x_start)
 
                     if benchmark:
-                        t=time()
+                        t = time()
                     nib.save(split_image, imagepath)
                     if benchmark:
-                        split_write_time+=time()-t
-                        split_seek_number+=1
+                        split_write_time += time()-t
+                        split_seek_number += 1
 
                     legend_path = '{0}/legend.txt'.format(local_dir)
 
                     if benchmark:
-                        t=time()
+                        t = time()
                     with open(legend_path, 'a+') as im_legend:
                         im_legend.write('{0}\n'.format(imagepath))
                     if benchmark:
-                        split_write_time+=time()-t
+                        split_write_time += time() - t
 
                     is_rem_z = False
             is_rem_y = False
 
         if benchmark:
-            return {'split_read_time':split_read_time, 'split_write_time':split_write_time, 'split_seek_time':split_seek_time,
-                'split_nb_seeks':split_seek_number}
+            return {'split_read_time': split_read_time,
+                    'split_write_time': split_write_time,
+                    'split_seek_time': split_seek_time,
+                    'split_nb_seeks': split_seek_number}
         else:
             return
-
-
 
     def strip_overlap(self, split_fn, split_data):
 
@@ -239,8 +249,6 @@ class ImageUtils:
         data = data[start_y:end_y, start_z:end_z, start_x:end_x]
 
         return (split_fn, (0, (y_size, z_size, x_size), data))
-
-
 
     def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir,
                                mem, filename_prefix="bigbrain",
@@ -292,45 +300,62 @@ class ImageUtils:
             if (X_size % X_splits != 0
                     or Z_size % Z_splits != 0
                     or Y_size % Y_splits != 0):
-                raise Exception("There is remainder after splitting, please reset "
-                                "the y,z,x splits")
+                raise Exception("""There is remainder after splitting,
+                        please reset the y,z,x splits""")
             x_size = X_size / X_splits
             z_size = Z_size / Z_splits
             y_size = Y_size / Y_splits
 
             # get all split_names and write them to the legend file
-            split_names = generate_splits_name(y_size, z_size, x_size, Y_size,
-                                               Z_size, X_size, out_dir,
-                                               filename_prefix, extension)
-            legend_file = generate_legend_file(split_names, "legend.txt", out_dir)
-            # in order to reduce overhead when reading headers of splits from hdfs,
-            # create a header cache in the local environment
-            split_meta_cache = generate_headers_of_splits(split_names, y_size,
-                                                          z_size, x_size,
-                                                          self.header.get_data_dtype())
-            return (split_names,
-                legend_file,
-                split_meta_cache,
-                bytes_per_voxel,
-                (x_size, z_size, y_size),
-                (X_size, Z_size, Y_size))
+            split_names = generate_splits_name(y_size, z_size, x_size,
+                                               Y_size, Z_size, X_size,
+                                               out_dir,
+                                               filename_prefix,
+                                               extension)
 
-        def getPos(split_names, start_index, sizes, Sizes, split_meta_cache, num_splits):
+            legend_file = generate_legend_file(split_names,
+                                               "legend.txt",
+                                               out_dir)
+
+            # in order to reduce overhead when reading headers of splits
+            # from hdfs, create a header cache in the local environment
+            split_meta_cache = generate_headers_of_splits(split_names,
+                                                          y_size,
+                                                          z_size,
+                                                          x_size,
+                                                          self.header
+                                                          .get_data_dtype())
+            return (split_names,
+                    legend_file,
+                    split_meta_cache,
+                    bytes_per_voxel,
+                    (x_size, z_size, y_size),
+                    (X_size, Z_size, Y_size))
+
+        def getPos(split_names,
+                   start_index,
+                   sizes,
+                   Sizes,
+                   split_meta_cache,
+                   num_splits):
             ''' A function.
             '''
             start_index = int(start_index)
-            start_pos = pos_to_int_tuple(split_ext(split_names[start_index])[0].split('_'))
+            start_pos = pos_to_int_tuple(
+                        split_ext(split_names[start_index])[0].split('_'))
             end_index = start_index + num_splits - 1
             if end_index >= len(split_names):
                 end_index = len(split_names) - 1
-            split_pos = pos_to_int_tuple(split_ext(split_names[int(end_index)])[0].split('_'))
+            split_pos = pos_to_int_tuple(
+                        split_ext(split_names[int(end_index)])[0].split('_'))
 
             x_size, z_size, y_size = sizes
             end_pos = (split_pos[0] + y_size,
                        split_pos[1] + z_size,
                        split_pos[2] + x_size)
             split_pos_in_range = [pos_to_int_tuple(split_ext(x)[0].split('_'))
-                                  for x in split_names[int(start_index):int(end_index) + 1]]
+                                  for x in split_names[
+                                  int(start_index):int(end_index) + 1]]
 
             X_size, Z_size, Y_size = Sizes
             end_index, end_pos = adjust_end_read(split_names, start_pos,
@@ -363,12 +388,27 @@ class ImageUtils:
             caches = _split_arr(one_round_split_metadata.items(), nThreads)
             return caches
 
-        def loop_(split_names, start_index, sizes, Sizes, split_meta_cache,
-            split_read_time, split_write_time, split_seek_time, split_seek_number, benchmark, num_splits):
+        def loop_(split_names,
+                  start_index,
+                  sizes,
+                  Sizes,
+                  split_meta_cache,
+                  split_read_time,
+                  split_write_time,
+                  split_seek_time,
+                  split_seek_number,
+                  benchmark,
+                  num_splits):
+
             ''' A function.
             '''
             start_pos, end_pos, start_index, end_index = \
-                getPos(split_names, start_index, sizes, Sizes, split_meta_cache, num_splits)
+                getPos(split_names,
+                       start_index,
+                       sizes,
+                       Sizes,
+                       split_meta_cache,
+                       num_splits)
 
             print(("Reading from {0} at index {1} "
                    "--> {2} at index {3}").format(start_pos,
@@ -383,13 +423,14 @@ class ImageUtils:
             X_size, Z_size, Y_size = Sizes
             if benchmark:
                 if extracted_shape[0] < Y_size:
-                    split_seek_number += extracted_shape[1] * extracted_shape[2]
+                    split_seek_number += \
+                        extracted_shape[1] * extracted_shape[2]
                 elif extracted_shape[1] < Z_size:
                     split_seek_number += extracted_shape[2]
                 else:
                     split_seek_number += 1
 
-            #read splits data
+            # read splits data
             data = None
             if (end_pos[0] - start_pos[0] == Y_size
                     and end_pos[1] - start_pos[1] == Z_size):
@@ -409,23 +450,35 @@ class ImageUtils:
                 if benchmark:
                     split_read_time += time() - t
 
-            #get round
-            caches = getRound(end_index, start_index, start_pos, split_names, sizes)
+            # get round
+            caches = getRound(end_index,
+                              start_index,
+                              start_pos,
+                              split_names,
+                              sizes)
             threaded()
 
-            #write split files
+            # write split files
             for round in caches:
                 for i in round:
                     ix = [int(x) for x in i[1]]
                     split_data = data[ix[0]: ix[1], ix[2]: ix[3], ix[4]: ix[5]]
 
                     if benchmark:
-                        seek_time, write_time, seek_number = write_array_to_file(split_data, i[0],self.header_size, benchmark)
+                        seek_time, write_time, seek_number = \
+                            write_array_to_file(split_data,
+                                                i[0],
+                                                self.header_size,
+                                                benchmark)
+
                         split_write_time += write_time
                         split_seek_time += seek_time
-                        split_seek_number+= seek_number
+                        split_seek_number += seek_number
                     else:
-                        write_array_to_file(split_data, i[0],self.header_size, benchmark)
+                        write_array_to_file(split_data,
+                                            i[0],
+                                            self.header_size,
+                                            benchmark)
 
                     start_index = end_index + 1
 
@@ -439,73 +492,85 @@ class ImageUtils:
             else:
                 return start_index, split_names
 
-        #begin function
-        split_read_time=0
-        split_write_time=0
-        split_seek_time=0
-        split_nb_seeks=0
+        # begin function
+        split_read_time = 0
+        split_write_time = 0
+        split_seek_time = 0
+        split_nb_seeks = 0
 
-        #get metadata
-        split_names, legend_file, split_meta_cache, bytes_per_voxel, sizes, Sizes =  \
+        # get metadata
+        (split_names,
+         legend_file,
+         split_meta_cache,
+         bytes_per_voxel,
+         sizes,
+         Sizes) =  \
             file_manipulation(filename_prefix, extension, out_dir)
 
-        #manage memory
+        # manage memory
         start_index = end_index = 0
         mem = None if mem is not None and mem == 0 else mem
         num_splits = 0
         if mem is not None:
-            num_splits = mem / (bytes_per_voxel * sizes[0] * sizes[1] * sizes[2])
+            num_splits = mem / \
+                (bytes_per_voxel * sizes[0] * sizes[1] * sizes[2])
         else:
             num_splits = 1
         if num_splits == 0:
             raise ValueError('Available memory is too low')
 
-        split_nb_seeks += len(split_names) #count 1 seek for each file open (think about disk seek)
+        # count 1 seek for each file open (think about disk seek)
+        split_nb_seeks += len(split_names)
 
-        #clustered writes
+        # clustered writes
         while start_index < len(split_names):
             if benchmark:
                 (start_index,
-                split_names,
-                split_read_time,
-                split_write_time,
-                split_seek_time,
-                split_nb_seeks) = (loop_(
-                        split_names,
-                        start_index,
-                        sizes,
-                        Sizes,
-                        split_meta_cache,
-                        split_read_time,
-                        split_write_time,
-                        split_seek_time,
-                        split_nb_seeks,
-                        benchmark,
-                        num_splits))
+                 split_names,
+                 split_read_time,
+                 split_write_time,
+                 split_seek_time,
+                 split_nb_seeks) = (loop_(split_names,
+                                          start_index,
+                                          sizes,
+                                          Sizes,
+                                          split_meta_cache,
+                                          split_read_time,
+                                          split_write_time,
+                                          split_seek_time,
+                                          split_nb_seeks,
+                                          benchmark,
+                                          num_splits))
             else:
-                start_index, split_names=(loop_(
-                        split_names,
-                        start_index,
-                        sizes,
-                        Sizes,
-                        split_meta_cache,
-                        split_read_time,
-                        split_write_time,
-                        split_seek_time,
-                        split_nb_seeks,
-                        benchmark,
-                        num_splits))
+                start_index, split_names = (loop_(split_names,
+                                                  start_index,
+                                                  sizes,
+                                                  Sizes,
+                                                  split_meta_cache,
+                                                  split_read_time,
+                                                  split_write_time,
+                                                  split_seek_time,
+                                                  split_nb_seeks,
+                                                  benchmark,
+                                                  num_splits))
 
         if benchmark:
-            return {'split_read_time':split_read_time,
-                    'split_write_time':split_write_time,
-                    'split_seek_time':split_seek_time,
-                    'split_nb_seeks':split_nb_seeks}
+            return {'split_read_time': split_read_time,
+                    'split_write_time': split_write_time,
+                    'split_seek_time': split_seek_time,
+                    'split_nb_seeks': split_nb_seeks}
         else:
             return
 
-    def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem,
-                              filename_prefix="bigbrain", extension="nii", nThreads=1,
+    def split_multiple_writes(self,
+                              Y_splits,
+                              Z_splits,
+                              X_splits,
+                              out_dir,
+                              mem,
+                              filename_prefix="bigbrain",
+                              extension="nii",
+                              nThreads=1,
                               benchmark=False):
         """
         Split the input image into several splits,
@@ -558,18 +623,21 @@ class ImageUtils:
         def compute_sizes(Y_splits, Z_splits, X_splits):
             ''' A function.
             '''
-            Y_size, Z_size, X_size = self.header.get_data_shape() # calculate remainder based on the original image file
+            # calculate remainder based on the original image file
+            Y_size, Z_size, X_size = self.header.get_data_shape()
             bytes_per_voxel = self.header['bitpix'] / 8
 
             if (X_size % X_splits != 0
                     or Z_size % Z_splits != 0
                     or Y_size % Y_splits != 0):
-                raise Exception("There is remainder after splitting, "
-                                "please reset the y,z,x splits")
+                raise Exception("There is remainder after splitting, \
+                                please reset the y,z,x splits")
             x_size = X_size / X_splits
             z_size = Z_size / Z_splits
             y_size = Y_size / Y_splits
-            return (x_size, z_size, y_size), (X_size, Z_size, Y_size), bytes_per_voxel
+            return ((x_size, z_size, y_size),
+                    (X_size, Z_size, Y_size),
+                    bytes_per_voxel)
 
         def file_manipulation_multiple(sizes, Sizes, filename_prefix):
             ''' A function.
@@ -585,12 +653,15 @@ class ImageUtils:
             generate_legend_file(split_names, "legend.txt", out_dir)
 
             # generate all the headers for each split
-            # in order to reduce overhead when reading headers of splits from hdfs,
-            # create a header cache in the local environment
+            # in order to reduce overhead when reading headers of splits
+            # from hdfs, create a header cache in the local environment
             print("create split meta data dictionary...")
-            split_meta_cache = generate_headers_of_splits(split_names, y_size,
-                                                          z_size, x_size,
-                                                          self.header.get_data_dtype())
+            split_meta_cache = generate_headers_of_splits(split_names,
+                                                          y_size,
+                                                          z_size,
+                                                          x_size,
+                                                          self.header
+                                                          .get_data_dtype())
 
             print("Get split indexes...")
             split_indexes = get_indexes_of_all_splits(split_names,
@@ -598,7 +669,10 @@ class ImageUtils:
                                                       Y_size, Z_size)
             return split_indexes, split_names, split_meta_cache
 
-        def get_metadata_multiple(split_indexes, split_names, split_meta_cache, from_x_index):
+        def get_metadata_multiple(split_indexes,
+                                  split_names,
+                                  split_meta_cache,
+                                  from_x_index):
             ''' A function.
             '''
 
@@ -623,22 +697,21 @@ class ImageUtils:
             return one_round_split_metadata
 
         def loop_multiple(next_read_index,
-                        bytes_per_voxel,
-                        Sizes,
-                        split_indexes,
-                        split_names,
-                        split_meta_cache,
-                        split_read_time,
-                        split_write_time,
-                        split_seek_time,
-                        split_seek_number,
-                        benchmark):
+                          bytes_per_voxel,
+                          Sizes,
+                          split_indexes,
+                          split_names,
+                          split_meta_cache,
+                          split_read_time,
+                          split_write_time,
+                          split_seek_time,
+                          split_seek_number,
+                          benchmark):
             ''' A function.
             '''
 
-            split_read_time=0
-            split_nb_seeks=0
-
+            split_read_time = 0
+            split_nb_seeks = 0
 
             X_size, Z_size, Y_size = Sizes
             original_img_voxels = X_size * Y_size * Z_size
@@ -651,25 +724,31 @@ class ImageUtils:
             to_x_index = index_to_voxel(next_read_index[1] + 1,
                                         Y_size, Z_size)[2]
 
-            #read
+            # read
             print("Start reading data to memory...")
             if benchmark:
                 t = time()
-            data_in_range = self.proxy.dataobj[..., int(from_x_index): int(to_x_index)]
+            data_in_range =  \
+                self.proxy.dataobj[..., int(from_x_index): int(to_x_index)]
             if benchmark:
                 split_read_time += time() - t
                 split_nb_seeks += 1
 
-            one_round_split_metadata = get_metadata_multiple(split_indexes, split_names, split_meta_cache, from_x_index)
+            one_round_split_metadata = get_metadata_multiple(split_indexes,
+                                                             split_names,
+                                                             split_meta_cache,
+                                                             from_x_index)
+
             caches = _split_arr(one_round_split_metadata.items(), nThreads)
             threaded_multiple()
             for round in caches:
                 for i in round:
                     ix = i[1]
                     ix = list(map(lambda x: int(x), ix))
-                    data = data_in_range[ix[0]:ix[1],ix[2]:ix[3],ix[4]:ix[5]]
+                    data = data_in_range[ix[0]:ix[1], ix[2]:ix[3], ix[4]:ix[5]]
                     if benchmark:
-                        seek_time, write_time, seek_number = write_array_to_file(data, i[0], 0, benchmark)
+                        seek_time, write_time, seek_number =  \
+                            write_array_to_file(data, i[0], 0, benchmark)
                         split_write_time += write_time
                         split_seek_time += seek_time
                         split_nb_seeks += seek_number
@@ -688,7 +767,7 @@ class ImageUtils:
             del one_round_split_metadata
             del data_in_range
 
-            if benchmark :
+            if benchmark:
                 return (next_read_index,
                         split_read_time,
                         split_write_time,
@@ -697,66 +776,80 @@ class ImageUtils:
             else:
                 return next_read_index
 
-        #begin algorithm
+        # begin algorithm
         split_read_time = 0
         split_seek_time = 0
         split_write_time = 0
         split_seek_number = 0
 
-        #preparation
-        sizes, Sizes, bytes_per_voxel = compute_sizes(Y_splits, Z_splits, X_splits)
+        # preparation
+        sizes, Sizes, bytes_per_voxel = compute_sizes(Y_splits,
+                                                      Z_splits,
+                                                      X_splits)
         X_size, Z_size, Y_size = Sizes
         original_img_voxels = X_size * Y_size * Z_size
-        split_indexes, split_names, split_meta_cache = file_manipulation_multiple(sizes, Sizes, filename_prefix)
+        (split_indexes,
+         split_names,
+         split_meta_cache) = \
+            file_manipulation_multiple(sizes,
+                                       Sizes,
+                                       filename_prefix)
 
         # drop the remainder which is less than one slice
         # if mem is less than one slice, then set mem to one slice
         mem = mem - mem % (Y_size * Z_size * bytes_per_voxel) \
             if mem >= Y_size * Z_size * bytes_per_voxel \
             else Y_size * Z_size * bytes_per_voxel
-        voxels = mem // bytes_per_voxel # get how many voxels per round
+        voxels = mem // bytes_per_voxel  # get how many voxels per round
         next_read_index = (0, voxels - 1)
 
         while True:
-            if benchmark :
+            if benchmark:
                 (next_read_index,
-                split_read_time,
-                split_write_time,
-                split_seek_time,
-                split_seek_number) = (loop_multiple(next_read_index,
-                                        bytes_per_voxel,
-                                        Sizes,
-                                        split_indexes,
-                                        split_names,
-                                        split_meta_cache,
-                                        split_read_time,
-                                        split_write_time,
-                                        split_seek_time,
-                                        split_seek_number,
-                                        benchmark))
+                 split_read_time,
+                 split_write_time,
+                 split_seek_time,
+                 split_seek_number) = (loop_multiple(next_read_index,
+                                                     bytes_per_voxel,
+                                                     Sizes,
+                                                     split_indexes,
+                                                     split_names,
+                                                     split_meta_cache,
+                                                     split_read_time,
+                                                     split_write_time,
+                                                     split_seek_time,
+                                                     split_seek_number,
+                                                     benchmark))
             else:
                 next_read_index = loop_multiple(next_read_index,
-                                        bytes_per_voxel,
-                                        Sizes,
-                                        split_indexes,
-                                        split_names,
-                                        split_meta_cache,
-                                        split_read_time,
-                                        split_write_time,
-                                        split_seek_time,
-                                        split_seek_number,
-                                        benchmark)
-            if next_read_index[0] >= original_img_voxels: # if write range is larger than img size, we are done
+                                                bytes_per_voxel,
+                                                Sizes,
+                                                split_indexes,
+                                                split_names,
+                                                split_meta_cache,
+                                                split_read_time,
+                                                split_write_time,
+                                                split_seek_time,
+                                                split_seek_number,
+                                                benchmark)
+            # if write range is larger than img size, we are done
+            if next_read_index[0] >= original_img_voxels:
                 break
 
         if benchmark:
-            return {'split_read_time':split_read_time, 'split_write_time':split_write_time, 'split_seek_time':split_seek_time,
-                    'split_nb_seeks':split_seek_number}
+            return {'split_read_time': split_read_time,
+                    'split_write_time': split_write_time,
+                    'split_seek_time': split_seek_time,
+                    'split_nb_seeks': split_seek_number}
         else:
             return
 
-    def merge(self, legend, merge_func, mem=None,
-                        input_compressed=False, benchmark=False):
+    def merge(self,
+              legend,
+              merge_func,
+              mem=None,
+              input_compressed=False,
+              benchmark=False):
         """
 
         Keyword arguments:
@@ -779,12 +872,12 @@ class ImageUtils:
             print("The reconstucted image is going to be compressed...")
             reconstructed = gzip.open(self.filepath, self.file_access())
 
-        header_writing_time=0
+        header_writing_time = 0
         if self.proxy is None:
             if benchmark:
                 t = time()
                 self.header.write_to(reconstructed)
-                header_writing_time=time()-t
+                header_writing_time = time() - t
             else:
                 self.header.write_to(reconstructed)
 
@@ -793,20 +886,32 @@ class ImageUtils:
             print("The input splits are compressed..")
 
         if benchmark:
-            perf_dict = self.merge_types[m_type](reconstructed, legend, mem,
-                                     input_compressed, benchmark)
-            perf_dict['merge_nb_seeks']+=1 #because of file opening earlier in the function
-            perf_dict['merge_write_time']+=header_writing_time
+            perf_dict = self.merge_types[m_type](reconstructed,
+                                                 legend,
+                                                 mem,
+                                                 input_compressed,
+                                                 benchmark)
+
+            # because of file opening earlier in the function
+            perf_dict['merge_nb_seeks'] += 1
+            perf_dict['merge_write_time'] += header_writing_time
             reconstructed.close()
             return perf_dict
         else:
-            self.merge_types[m_type](reconstructed, legend, mem,
-                                     input_compressed, benchmark)
+            self.merge_types[m_type](reconstructed,
+                                     legend,
+                                     mem,
+                                     input_compressed,
+                                     benchmark)
             reconstructed.close()
             return
 
-    def clustered_read(self, reconstructed, legend, mem,
-                       input_compressed, benchmark):
+    def clustered_read(self,
+                       reconstructed,
+                       legend,
+                       mem,
+                       input_compressed,
+                       benchmark):
         """
         Reconstruct an image given a set of splits and amount of available
         memory such that it can load subset of splits into memory for faster
@@ -829,20 +934,20 @@ class ImageUtils:
               to nifti headers
         """
 
-        #init
-        merge_read_time=0
-        merge_seek_time=0
-        merge_nb_seeks=0
-        merge_write_time=0
+        # init
+        merge_read_time = 0
+        merge_seek_time = 0
+        merge_nb_seeks = 0
+        merge_write_time = 0
         rec_dims = self.header.get_data_shape()
         y_size = rec_dims[0]
         z_size = rec_dims[1]
         x_size = rec_dims[2]
         bytes_per_voxel = self.header['bitpix'] / 8
 
-        #get splits
+        # get splits
         splits = sort_split_names(legend)
-        merge_nb_seeks += len(splits) #1 seek for each file opening
+        merge_nb_seeks += len(splits)  # 1 seek for each file opening
 
         # if a mem is inputted as 0, proceed with naive implementation
         # (same as not inputting a value for mem)
@@ -855,26 +960,39 @@ class ImageUtils:
 
         while start_index < len(splits):
             if mem is not None:
-                end_index = self.get_end_index(data_dict, remaining_mem,
-                                               splits, start_index,
-                                               bytes_per_voxel, y_size,
-                                               z_size, x_size)
+                end_index = self.get_end_index(data_dict,
+                                               remaining_mem,
+                                               splits,
+                                               start_index,
+                                               bytes_per_voxel,
+                                               y_size,
+                                               z_size,
+                                               x_size)
             else:
                 end_index = start_index
                 print("Naive reading from split index "
                       "{0} -> {1}".format(start_index, end_index))
 
-            read_time = self.insert_elems(data_dict, splits,
-                                                       start_index, end_index,
-                                                       bytes_per_voxel,
-                                                       y_size, z_size, x_size,
-                                                       input_compressed, benchmark)
+            read_time = self.insert_elems(data_dict,
+                                          splits,
+                                          start_index,
+                                          end_index,
+                                          bytes_per_voxel,
+                                          y_size,
+                                          z_size,
+                                          x_size,
+                                          input_compressed,
+                                          benchmark)
             merge_read_time += read_time
 
-            #write
+            # write
             (seek_time, write_time, num_seeks) = \
-                write_dict_to_file(data_dict, reconstructed,
-                                   bytes_per_voxel, self.header_size, benchmark)
+                write_dict_to_file(data_dict,
+                                   reconstructed,
+                                   bytes_per_voxel,
+                                   self.header_size,
+                                   benchmark)
+
             merge_seek_time += seek_time
             merge_nb_seeks += num_seeks
             merge_write_time += write_time
@@ -890,8 +1008,10 @@ class ImageUtils:
             print("Total time spent seeking: ", merge_seek_time)
             print("Total number of seeks: ", merge_nb_seeks)
             print("Total time spent writing: ", merge_write_time)
-            return {'merge_read_time':merge_read_time, 'merge_write_time':merge_write_time, 'merge_seek_time':merge_seek_time,
-                'merge_nb_seeks':merge_nb_seeks}
+            return {'merge_read_time': merge_read_time,
+                    'merge_write_time': merge_write_time,
+                    'merge_seek_time': merge_seek_time,
+                    'merge_nb_seeks': merge_nb_seeks}
         else:
             return
 
@@ -927,13 +1047,13 @@ class ImageUtils:
             if benchmark:
                 t = time()
                 split_data = split_im.proxy.get_data()
-                read_time = time() - t #if input_compressed:
+                read_time = time() - t  # if input_compressed:
             else:
                 split_data = split_im.proxy.get_data()
 
             # split is a complete slice
             if split_im.split_y == y_size and split_im.split_z == z_size:
-                #t = time()
+                # t = time()
                 data = split_data.tobytes('F')
                 '''if not input_compressed:
                     read_time += time() - t'''
@@ -946,7 +1066,7 @@ class ImageUtils:
             # WARNING: Untested
             elif split_im.split_y == y_size and split_im.split_z < z_size:
                 for i in xrange(split_im.split_x):
-                    #t = time()
+                    # t = time()
                     data = split_data[:, :, i].tobytes('F')
                     '''if not input_compressed:
                         read_time += time() - t'''
@@ -959,7 +1079,7 @@ class ImageUtils:
             else:
                 for i in range(0, split_im.split_x):
                     for j in range(0, split_im.split_z):
-                        #t = time()
+                        # t = time()
                         data = split_data[:, j, i].tobytes('F')
                         '''if not input_compressed:
                             read_time += time() - t'''
@@ -1084,7 +1204,7 @@ class ImageUtils:
         # to filter the splits out of the write range
         sorted_split_name_list = sort_split_names(legend)
         if benchmark:
-            merge_nb_seeks+=len(sorted_split_name_list)
+            merge_nb_seeks += len(sorted_split_name_list)
         split_meta_cache = {}
         for s in sorted_split_name_list:
             split_meta_cache[s] = Split(s)
@@ -1106,7 +1226,7 @@ class ImageUtils:
                 in_range = check_in_range(next_write_index,
                                           split_indexes[split_name])
                 if in_range:
-                    #READ
+                    # READ
                     found_first_split_in_range = True
                     read_time_one_r = extract_rows(Split(split_name),
                                                    data_dict,
@@ -1146,12 +1266,14 @@ class ImageUtils:
                 break
             del data_dict
 
-        #endofwhile
+        # endofwhile
         if benchmark:
             print(merge_read_time, merge_write_time,
                   merge_seek_time, merge_nb_seeks)
-            return {'merge_read_time':merge_read_time, 'merge_write_time':merge_write_time, 'merge_seek_time':merge_seek_time,
-                    'merge_nb_seeks':merge_nb_seeks}
+            return {'merge_read_time': merge_read_time,
+                    'merge_write_time': merge_write_time,
+                    'merge_seek_time': merge_seek_time,
+                    'merge_nb_seeks': merge_nb_seeks}
         else:
             return
 
@@ -1275,7 +1397,7 @@ def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index,
                        split_pos[1] + split_shape[1],
                        split_pos[2] + split_shape[2])
 
-    return int(end_idx), list(map(lambda x:int(x), end_pos))
+    return int(end_idx), list(map(lambda x: int(x), end_pos))
 
 
 def generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size,
@@ -1318,7 +1440,6 @@ def generate_headers_of_splits(split_names, y_size, z_size, x_size, dtype):
         with open(split_name, 'w+b') as f:
             header.write_to(f)
         split_meta_cache[split_name] = Split(split_name, header)
-
 
     return split_meta_cache
 
@@ -1441,12 +1562,12 @@ def extract_rows(split, data_dict, index_list, write_index,
     write_start, write_end = write_index
     index_list = list(map(lambda x: int(x), index_list))
 
-    if benchmark: #if benchmark and input_compressed:
-        t=time()
-        split_data=split.proxy.get_data()
-        read_time_one_r+=time()-t
+    if benchmark:  # if benchmark and input_compressed:
+        t = time()
+        split_data = split.proxy.get_data()
+        read_time_one_r += time()-t
     else:
-        split_data=split.proxy.get_data()
+        split_data = split.proxy.get_data()
 
     for n, index in enumerate(index_list):
 
@@ -1543,12 +1664,12 @@ def write_array_to_file(data_array, to_file, write_offset, benchmark):
     """
     data = data_array.tobytes('F')
 
-    #write
+    # write
     if benchmark:
         write_time = 0
         seek_number = 0
         t = time()
-    fd=os.open(to_file, os.O_RDWR | os.O_APPEND)
+    fd = os.open(to_file, os.O_RDWR | os.O_APPEND)
     os.pwrite(fd, data, write_offset)
     os.close(fd)
     if benchmark:
@@ -1558,14 +1679,18 @@ def write_array_to_file(data_array, to_file, write_offset, benchmark):
     del data
 
     if benchmark:
-        seek_number=2 #1 for opening file, 1 for seeking into the file
-        seek_time=0
+        seek_number = 2  # 1 for opening file, 1 for seeking into the file
+        seek_time = 0
         return seek_time, write_time, seek_number
     else:
         return
 
 
-def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset, benchmark):
+def write_dict_to_file(data_dict,
+                       to_file,
+                       bytes_per_voxel,
+                       header_offset,
+                       benchmark):
     """
     :param data_array: consists of consistent data that to bo written to the
                        file
@@ -1580,18 +1705,18 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset, bench
         seek_pos = int(header_offset + k * bytes_per_voxel)
         data_bytes = data_dict[k]
 
-        if benchmark :
+        if benchmark:
             t = time()
             os.pwrite(to_file.fileno(), data_bytes, seek_pos)
             write_time += time() - t
-            seek_number+=1
+            seek_number += 1
         else:
             os.pwrite(to_file.fileno(), data_bytes, seek_pos)
 
         del data_dict[k]
         del data_bytes
 
-    if benchmark :
+    if benchmark:
         t = time()
         to_file.flush()
         os.fsync(to_file)
@@ -1600,7 +1725,9 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset, bench
         to_file.flush()
         os.fsync(to_file)
 
-    seek_time = 0 #because we don't use seek(), the seek time is embedded in the writing time
+    # because we don't use seek(), the seek time is
+    # embedded in the writing time
+    seek_time = 0
     return seek_time, write_time, seek_number
 
 
