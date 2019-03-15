@@ -7,11 +7,11 @@ python:
     - 3.6
     - nightly
 
-
 install:
     - pip install coveralls pytest==3.6 pytest-cov pycodestyle nibabel
 
 script:
+    - export PYTHONPATH=${PYTHONPATH}:${PWD}
     - pycodestyle sam/imageutils.py tests/*.py
     - pytest --cov=sam ./
 
